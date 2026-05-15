@@ -1,0 +1,188 @@
+<%@ Master Language="C#" AutoEventWireup="true" CodeBehind="Site.master.cs" Inherits="Onfoot_Inventory.SiteMaster" %>
+<!DOCTYPE html>
+<html lang="en">
+<head runat="server">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%: Page.Title %> | Onfoot Inventory</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="<%: ResolveUrl("~/Content/Logo/Onfoot logo icon.ico") %>" />
+    <!-- Bootstrap 5 -->
+    <link href="<%: ResolveUrl("~/Content/bootstrap.min.css") %>" rel="stylesheet" />
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css" rel="stylesheet" />
+    <!-- Custom Inventory CSS -->
+    <link href="<%: ResolveUrl("~/Content/inventory.css") %>" rel="stylesheet" />
+
+    <asp:ContentPlaceHolder ID="HeadContent" runat="server" />
+</head>
+<body>
+
+    <!-- Sidebar Overlay (mobile) -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebarMobile()"></div>
+
+    <div id="wrapper">
+
+        <!-- ========== SIDEBAR ========== -->
+        <nav id="sidebar">
+
+            <!-- Brand -->
+            <a class="sidebar-brand" href="<%: ResolveUrl("~/") %>">
+                <div class="sidebar-brand-icon">
+                    <img src="<%: ResolveUrl("~/Content/Logo/Onfoot logo icon.png") %>" alt="Onfoot" style="width:32px;height:32px;object-fit:contain;" />
+                </div>
+                <span>Onfoot Inventory</span>
+            </a>
+
+            <!-- Main Nav -->
+            <div class="sidebar-section">Main</div>
+            <ul class="sidebar-nav">
+                <li>
+                    <a href="<%: ResolveUrl("~/Default.aspx") %>" data-page="default">
+                        <i class="fas fa-chart-pie nav-icon"></i>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+            </ul>
+
+            <!-- Catalog -->
+            <div class="sidebar-section">Catalog</div>
+            <ul class="sidebar-nav">
+                <li>
+                    <a href="<%: ResolveUrl("~/Products.aspx") %>" data-page="products">
+                        <i class="fas fa-box-open nav-icon"></i>
+                        <span>Products</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<%: ResolveUrl("~/Categories.aspx") %>" data-page="categories">
+                        <i class="fas fa-tags nav-icon"></i>
+                        <span>Categories</span>
+                    </a>
+                </li>
+            </ul>
+
+            <!-- Inventory -->
+            <div class="sidebar-section">Inventory</div>
+            <ul class="sidebar-nav">
+                <li>
+                    <a href="#" data-page="stock" class="disabled-nav">
+                        <i class="fas fa-warehouse nav-icon"></i>
+                        <span>Stock Management</span>
+                        <span class="nav-badge">Soon</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#" data-page="purchases" class="disabled-nav">
+                        <i class="fas fa-shopping-cart nav-icon"></i>
+                        <span>Purchases</span>
+                        <span class="nav-badge">Soon</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<%: ResolveUrl("~/Sales.aspx") %>" data-page="sales">
+                        <i class="fas fa-receipt nav-icon"></i>
+                        <span>Sales</span>
+                    </a>
+                </li>
+            </ul>
+
+            <!-- Reports -->
+            <div class="sidebar-section">Reports</div>
+            <ul class="sidebar-nav">
+                <li>
+                    <a href="#" data-page="reports" class="disabled-nav">
+                        <i class="fas fa-chart-bar nav-icon"></i>
+                        <span>Reports</span>
+                        <span class="nav-badge">Soon</span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer">
+                &copy; <%= DateTime.Now.Year %> Onfoot Inventory
+            </div>
+        </nav>
+
+        <!-- ========== CONTENT WRAPPER ========== -->
+        <div id="content-wrapper">
+
+            <!-- Top Navbar -->
+            <div class="top-navbar">
+                <div class="topbar-left">
+                    <button id="sidebarToggle" onclick="toggleSidebar()" title="Toggle Sidebar">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <span class="text-muted d-none d-md-inline" style="font-size:0.82rem;">
+                        <i class="fas fa-calendar-alt me-1"></i>
+                        <%= DateTime.Now.ToString("dddd, MMMM dd, yyyy") %>
+                    </span>
+                </div>
+                <div class="topbar-right">
+                    <div class="d-none d-sm-flex align-items-center gap-2">
+                        <span style="font-size:0.82rem;color:#64748b;">Welcome, <strong>Admin</strong></span>
+                    </div>
+                    <div class="topbar-user-avatar" title="Admin User">A</div>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="main-content">
+                <asp:ContentPlaceHolder ID="MainContent" runat="server" />
+            </div>
+
+            <!-- Footer -->
+            <div class="main-footer">
+                &copy; <%= DateTime.Now.Year %> Onfoot Inventory Management System &mdash; All Rights Reserved
+            </div>
+        </div>
+
+    </div>
+
+    <!-- jQuery -->
+    <script src="<%: ResolveUrl("~/Scripts/jquery-3.7.0.min.js") %>"></script>
+    <!-- Bootstrap 5 Bundle -->
+    <script src="<%: ResolveUrl("~/Scripts/bootstrap.bundle.min.js") %>"></script>
+
+    <!-- Sidebar Script -->
+    <script>
+        var sidebarCollapsed = false;
+
+        function toggleSidebar() {
+            var w = window.innerWidth;
+            if (w <= 991) {
+                document.getElementById('sidebar').classList.toggle('mobile-open');
+                document.getElementById('sidebarOverlay').style.display =
+                    document.getElementById('sidebar').classList.contains('mobile-open') ? 'block' : 'none';
+            } else {
+                sidebarCollapsed = !sidebarCollapsed;
+                document.getElementById('sidebar').classList.toggle('collapsed', sidebarCollapsed);
+                document.getElementById('content-wrapper').classList.toggle('expanded', sidebarCollapsed);
+            }
+        }
+
+        function closeSidebarMobile() {
+            document.getElementById('sidebar').classList.remove('mobile-open');
+            document.getElementById('sidebarOverlay').style.display = 'none';
+        }
+
+        // Highlight active nav item based on current URL
+        (function () {
+            var path = window.location.pathname.toLowerCase();
+            document.querySelectorAll('#sidebar .sidebar-nav a[data-page]').forEach(function (a) {
+                var page = a.getAttribute('data-page');
+                if (page === 'default' && (path === '/' || path.indexOf('default') !== -1)) {
+                    a.classList.add('active');
+                } else if (page !== 'default' && path.indexOf(page) !== -1) {
+                    a.classList.add('active');
+                }
+            });
+        })();
+    </script>
+
+    <!-- Page-specific scripts placeholder -->
+    <asp:ContentPlaceHolder ID="ScriptsContent" runat="server" />
+
+</body>
+</html>
