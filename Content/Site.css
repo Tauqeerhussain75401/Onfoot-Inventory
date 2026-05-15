@@ -1,0 +1,25 @@
+/* Site-wide base styles */
+body {
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+/* Validation helpers */
+.field-validation-error { color: #dc2626; font-size: 0.8rem; }
+.field-validation-valid  { display: none; }
+.input-validation-error  { border-color: #dc2626 !important; }
+
+/* Override Bootstrap focus ring to match brand */
+.form-control:focus, .form-select:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.2);
+}
+
+.btn-primary {
+    background-color: #2563eb;
+    border-color: #2563eb;
+}
+.btn-primary:hover, .btn-primary:focus {
+    background-color: #1d4ed8;
+    border-color: #1d4ed8;
+}
