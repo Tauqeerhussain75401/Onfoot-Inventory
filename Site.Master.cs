@@ -1,9 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+using System;
 using System.Web;
+using System.Web.Security;
 using System.Web.UI;
-using System.Web.UI.WebControls;
 
 namespace Onfoot_Inventory
 {
@@ -11,7 +9,21 @@ namespace Onfoot_Inventory
     {
         protected void Page_Load(object sender, EventArgs e)
         {
-
+            if (!IsPostBack)
+                PopulateUserBar();
         }
+
+        private void PopulateUserBar()
+        {
+            string fullName = Session["FullName"] as string ?? HttpContext.Current.User.Identity.Name;
+            string role     = Session["Role"]     as string ?? "";
+
+            litFullName.Text = HttpUtility.HtmlEncode(fullName);
+            litRole.Text     = HttpUtility.HtmlEncode(role);
+            litAvatar.Text   = fullName.Length > 0
+                               ? fullName[0].ToString().ToUpper()
+                               : "U";
+        }
+
     }
 }

@@ -121,9 +121,14 @@
                 </div>
                 <div class="topbar-right">
                     <div class="d-none d-sm-flex align-items-center gap-2">
-                        <span style="font-size:0.82rem;color:#64748b;">Welcome, <strong>Admin</strong></span>
+                        <span style="font-size:0.82rem;color:#64748b;">Welcome, <strong><asp:Literal ID="litFullName" runat="server" /></strong></span>
+                        <span style="font-size:0.75rem;color:#94a3b8;">(<asp:Literal ID="litRole" runat="server" />)</span>
                     </div>
-                    <div class="topbar-user-avatar" title="Admin User">A</div>
+                    <div class="topbar-user-avatar" title="Logged in user"><asp:Literal ID="litAvatar" runat="server" /></div>
+                    <a href="<%: ResolveUrl("~/Logout.aspx") %>" title="Sign Out"
+                       style="color:#64748b;text-decoration:none;font-size:0.82rem;margin-left:4px;">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </a>
                 </div>
             </div>
 
