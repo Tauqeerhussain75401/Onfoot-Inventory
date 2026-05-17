@@ -75,7 +75,7 @@ namespace Onfoot_Inventory
             {
                 conn.Open();
                 using (var cmd = new SqlCommand(
-                    "SELECT MarketplaceId, MarketplaceName, Description FROM Marketplaces WHERE IsActive = 1 ORDER BY MarketplaceName", conn))
+                    "SELECT MarketplaceId, MarketplaceName, Description FROM Marketplaces WHERE IsActive = 1 ORDER BY marketplaceid", conn))
                 using (var rdr = cmd.ExecuteReader())
                 {
                     while (rdr.Read())
@@ -653,6 +653,121 @@ namespace Onfoot_Inventory
                 return JsonConvert.SerializeObject(new { success = true, message = "Stock returned to warehouse successfully." });
             }
             catch (Exception ex) { return Fail("Error: " + ex.Message); }
+        }
+
+        // ============================================================
+        // MARK DAMAGED  (remove from marketplace, NOT back to warehouse)
+        // ============================================================
+        [WebMethod]
+        public static string MarkDamaged(int variantId, int marketplaceId, int quantity, string notes)
+        {
+            try
+            {
+                if (variantId     <= 0) return Fail("Invalid variant.");
+                if (marketplaceId <= 0) return Fail("Invalid marketplace.");
+                if (quantity      <= 0) return Fail("Quantity must be greater than zero.");
+
+                using (var conn = GetConnection())
+                {
+                    conn.Open();
+
+                    int mpStock = 0;
+                    using (var chk = new SqlCommand(
+                        "SELECT ISNULL(StockQuantity,0) FROM MarketplaceInventory WHERE VariantId = @vid AND MarketplaceId = @mpid", conn))
+                    {
+                        chk.Parameters.AddWithValue("@vid",  variantId);
+                        chk.Parameters.AddWithValue("@mpid", marketplaceId);
+                        mpStock = Convert.ToInt32(chk.ExecuteScalar() ?? 0);
+                    }
+
+                    if (quantity > mpStock)
+                        return Fail("Not enough marketplace stock. Available: " + mpStock);
+
+                    string user = CurrentUser();
+                    using (var tx = conn.BeginTransaction())
+                    {
+                        try
+                        {
+                            // Only reduce marketplace stock — do NOT touch warehouse
+                            using (var c1 = new SqlCommand(@"
+                                UPDATE MarketplaceInventory
+                                SET StockQuantity = StockQuantity - @qty, UpdatedDate = GETDATE()
+                                WHERE VariantId = @vid AND MarketplaceId = @mpid", conn, tx))
+                            {
+                                c1.Parameters.AddWithValue("@qty",  quantity);
+                                c1.Parameters.AddWithValue("@vid",  variantId);
+                                c1.Parameters.AddWithValue("@mpid", marketplaceId);
+                                c1.ExecuteNonQuery();
+                            }
+
+                            using (var c2 = new SqlCommand(@"
+                                INSERT INTO StockMovements
+                                    (VariantId, MovementType, FromMarketplaceId, ToMarketplaceId, Quantity, Notes, CreatedBy, CreatedDate)
+                                VALUES (@vid, 'DAMAGED', @mpid, NULL, @qty, @notes, @user, GETDATE())", conn, tx))
+                            {
+                                c2.Parameters.AddWithValue("@vid",   variantId);
+                                c2.Parameters.AddWithValue("@mpid",  marketplaceId);
+                                c2.Parameters.AddWithValue("@qty",   quantity);
+                                c2.Parameters.AddWithValue("@notes", (object)(notes?.Trim()) ?? DBNull.Value);
+                                c2.Parameters.AddWithValue("@user",  user);
+                                c2.ExecuteNonQuery();
+                            }
+
+                            tx.Commit();
+                        }
+                        catch { tx.Rollback(); throw; }
+                    }
+                }
+                return JsonConvert.SerializeObject(new { success = true, message = "Stock marked as damaged and removed." });
+            }
+            catch (Exception ex) { return Fail("Error: " + ex.Message); }
+        }
+
+        // ============================================================
+        // GET ALL STOCK MOVEMENTS  (full history, all variants)
+        // ============================================================
+        [WebMethod]
+        public static string GetAllStockMovements()
+        {
+            var list = new List<object>();
+            using (var conn = GetConnection())
+            {
+                conn.Open();
+                using (var cmd = new SqlCommand(@"
+                    SELECT TOP 1000
+                           sm.MovementType, sm.Quantity, sm.Notes, sm.CreatedDate, sm.CreatedBy,
+                           ISNULL(pv.SKUNumbers, pv.Color + ' / Sz ' + pv.Size) AS SKUDisplay,
+                           p.ProductCode, p.ProductName,
+                           mf.MarketplaceName AS FromName,
+                           mt.MarketplaceName AS ToName
+                    FROM StockMovements sm
+                    INNER JOIN ProductVariants pv ON pv.VariantId = sm.VariantId
+                    INNER JOIN Products        p  ON p.ProductId  = pv.ProductId
+                    LEFT  JOIN Marketplaces    mf ON mf.MarketplaceId = sm.FromMarketplaceId
+                    LEFT  JOIN Marketplaces    mt ON mt.MarketplaceId = sm.ToMarketplaceId
+                    ORDER BY sm.CreatedDate DESC", conn))
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                    {
+                        string from = rdr.IsDBNull(rdr.GetOrdinal("FromName")) ? "Warehouse" : rdr["FromName"].ToString();
+                        string to   = rdr.IsDBNull(rdr.GetOrdinal("ToName"))   ? "Warehouse" : rdr["ToName"].ToString();
+                        list.Add(new {
+                            MovementType = rdr["MovementType"].ToString(),
+                            SKUDisplay   = rdr["SKUDisplay"].ToString(),
+                            ProductCode  = rdr["ProductCode"].ToString(),
+                            ProductName  = rdr["ProductName"].ToString(),
+                            From         = from,
+                            To           = to,
+                            Quantity     = Convert.ToInt32(rdr["Quantity"]),
+                            Notes        = rdr.IsDBNull(rdr.GetOrdinal("Notes"))     ? "" : rdr["Notes"].ToString(),
+                            CreatedBy    = rdr.IsDBNull(rdr.GetOrdinal("CreatedBy")) ? "" : rdr["CreatedBy"].ToString(),
+                            CreatedDate  = Convert.ToDateTime(rdr["CreatedDate"]).ToString("dd-MMM-yyyy HH:mm")
+                        });
+                    }
+                }
+            }
+            return JsonConvert.SerializeObject(list);
         }
 
         // ============================================================

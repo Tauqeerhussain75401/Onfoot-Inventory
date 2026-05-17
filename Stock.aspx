@@ -64,6 +64,9 @@
             <button class="btn btn-outline-secondary btn-sm" onclick="loadPage()" title="Refresh">
                 <i class="fas fa-sync-alt me-1"></i> Refresh
             </button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="openAllHistoryModal()">
+                <i class="fas fa-history me-1"></i> All History
+            </button>
             <button class="btn btn-outline-info btn-sm" onclick="openManageMarketplacesModal()">
                 <i class="fas fa-store me-1"></i> Marketplaces
             </button>
@@ -268,28 +271,43 @@
 
                     <!-- Variant info banner -->
                     <div class="mb-3 p-3 rounded" style="background:#eff6ff; border:1px solid #bfdbfe;">
-                        <div class="fw-semibold text-primary" id="allocVariantLabel"></div>
-                        <small class="text-muted">
-                            Available warehouse stock:
-                            <strong id="allocWarehouseStock" class="text-success">—</strong>
-                        </small>
+                        <div class="fw-semibold text-primary mb-2" id="allocVariantLabel"></div>
+                        <div id="allocStockSummary" class="d-flex flex-wrap gap-2"></div>
                     </div>
 
+                    <!-- Step 1: Allocate From -->
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Marketplace <span class="text-danger">*</span></label>
-                        <select id="allocMarketplace" class="form-select">
-                            <option value="">-- Select Marketplace --</option>
+                        <label class="form-label fw-semibold">Allocate From <span class="text-danger">*</span></label>
+                        <select id="allocFrom" class="form-select" onchange="onAllocFromChange()">
+                            <option value="">-- Select Source --</option>
                         </select>
                     </div>
+
+                    <!-- Available qty (shown after From is selected) -->
+                    <div class="mb-3 d-none" id="allocFromAvailRow">
+                        <div class="p-2 rounded d-flex align-items-center gap-2"
+                             style="background:#f0fdf4;border:1px solid #bbf7d0;">
+                            <i class="fas fa-boxes text-success"></i>
+                            <span class="text-muted" style="font-size:.85rem;">Available:</span>
+                            <span class="fw-bold text-success fs-6" id="allocFromAvailQty">0</span>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Allocate To -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Allocate To <span class="text-danger">*</span></label>
+                        <select id="allocMarketplace" class="form-select">
+                            <option value="">-- Select Destination --</option>
+                        </select>
+                    </div>
+
+                    <!-- Step 3: Qty -->
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Quantity <span class="text-danger">*</span></label>
-                        <input type="number" id="allocQty" class="form-control" min="1" placeholder="Enter quantity to send" />
-                        <div class="form-text">Max available: <span id="allocMaxHint">—</span></div>
+                        <input type="number" id="allocQty" class="form-control" min="1" placeholder="Enter quantity" />
+                        <div class="form-text">Max available: <span id="allocMaxHint">-</span></div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Notes</label>
-                        <input type="text" id="allocNotes" class="form-control" placeholder="Optional notes" />
-                    </div>
+
                     <div id="allocError" class="alert alert-danger d-none"></div>
                 </div>
                 <div class="modal-footer">
@@ -316,7 +334,8 @@
                     <input type="hidden" id="returnVariantId" value="0" />
 
                     <div class="mb-3 p-3 rounded" style="background:#fff7ed; border:1px solid #fed7aa;">
-                        <div class="fw-semibold text-warning" id="returnVariantLabel"></div>
+                        <div class="fw-semibold text-warning mb-2" id="returnVariantLabel"></div>
+                        <div id="returnStockSummary" class="d-flex flex-wrap gap-2"></div>
                     </div>
 
                     <div class="mb-3">
@@ -328,18 +347,33 @@
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Quantity <span class="text-danger">*</span></label>
                         <input type="number" id="returnQty" class="form-control" min="1" />
-                        <div class="form-text">Available on selected marketplace: <span id="returnMaxHint">—</span></div>
+                        <div class="form-text">Available on selected marketplace: <span id="returnMaxHint">-</span></div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-semibold">Notes</label>
-                        <input type="text" id="returnNotes" class="form-control" placeholder="Optional notes" />
+                        <label class="form-label fw-semibold">Reason <span class="text-danger">*</span></label>
+                        <input type="text" id="returnReason" class="form-control" placeholder="Enter reason (required)" />
                     </div>
+
+                    <!-- Damaged toggle -->
+                    <div class="mb-3 p-3 rounded" style="background:#fef2f2;border:1px solid #fecaca;">
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" id="chkDamaged" onchange="onDamagedToggle()" />
+                            <label class="form-check-label fw-semibold text-danger" for="chkDamaged">
+                                <i class="fas fa-exclamation-triangle me-1"></i> Mark as Damaged
+                            </label>
+                        </div>
+                        <small class="text-muted d-block mt-1" id="damagedHint">
+                            When checked, stock is written off - it will <strong>not</strong> be added back to warehouse.
+                        </small>
+                    </div>
+
                     <div id="returnError" class="alert alert-danger d-none"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-warning" onclick="saveReturn()">
-                        <i class="fas fa-undo me-1"></i> Return to Warehouse
+                    <button type="button" class="btn btn-warning" id="btnReturnSave" onclick="saveReturn()">
+                        <i class="fas fa-undo me-1" id="btnReturnIcon"></i>
+                        <span id="btnReturnLabel">Return to Warehouse</span>
                     </button>
                 </div>
             </div>
@@ -367,10 +401,11 @@
                                     <th>To</th>
                                     <th class="text-center">Qty</th>
                                     <th>By</th>
+                                    <th>Notes</th>
                                 </tr>
                             </thead>
                             <tbody id="historyBody">
-                                <tr><td colspan="6" class="text-center text-muted py-3">Loading…</td></tr>
+                                <tr><td colspan="7" class="text-center text-muted py-3">Loading...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -434,6 +469,65 @@
         </div>
     </div>
 
+    <!-- ============================================================
+         MODAL: ALL HISTORY
+         ============================================================ -->
+    <div class="modal fade" id="allHistoryModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-history me-2 text-secondary"></i>All Stock Movements</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div class="px-3 pt-3 pb-2">
+                        <div class="row g-2 align-items-center">
+                            <div class="col-md-4">
+                                <input type="text" id="allHistorySearch" class="form-control form-control-sm"
+                                       placeholder="Search SKU, product, type, user..." oninput="filterAllHistory()" />
+                            </div>
+                            <div class="col-md-3">
+                                <select id="allHistoryTypeFilter" class="form-select form-select-sm" onchange="filterAllHistory()">
+                                    <option value="">All Types</option>
+                                    <option value="RECEIVE">Receive</option>
+                                    <option value="ALLOCATE">Allocate</option>
+                                    <option value="TRANSFER">Transfer</option>
+                                    <option value="RETURN">Return</option>
+                                    <option value="DAMAGED">Damaged</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2 text-muted" style="font-size:.82rem;">
+                                <span id="allHistoryCount"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0" id="tblAllHistory">
+                            <thead class="table-light" style="position:sticky;top:0;z-index:1;">
+                                <tr>
+                                    <th style="width:130px;">Date</th>
+                                    <th>SKU</th>
+                                    <th style="width:100px;">Type</th>
+                                    <th>From</th>
+                                    <th>To</th>
+                                    <th class="text-center" style="width:60px;">Qty</th>
+                                    <th style="width:110px;">By</th>
+                                    <th>Notes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="allHistoryBody">
+                                <tr><td colspan="8" class="text-center text-muted py-4">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast -->
     <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:9999;">
         <div id="mainToast" class="toast align-items-center border-0" role="alert">
@@ -458,7 +552,13 @@
         var dtStock         = null; // DataTable instance
 
         // ── boot ─────────────────────────────────────────────────────────────
-        $(function () { loadPage(); });
+        $(function () {
+            loadPage();
+            // Re-enable product dropdown when Add Stock modal closes
+            document.getElementById('addStockModal').addEventListener('hidden.bs.modal', function () {
+                document.getElementById('addStockProduct').disabled = false;
+            });
+        });
 
         function loadPage() {
             loadStats();
@@ -531,7 +631,8 @@
             });
 
             head += '<th class="text-center" style="width:100px;">'
-                  + '<span style="color:#64748b;font-weight:700;">Allocated</span></th>'
+                  + '<span style="color:#64748b;font-weight:700;">'
+                  + '<i class="fas fa-sigma me-1" style="font-size:.75rem;"></i>MP Total</span></th>'
                   + '<th style="width:120px;">Actions</th></tr>';
             document.getElementById('stockThead').innerHTML = head;
 
@@ -634,38 +735,68 @@
         // ─────────────────────────────────────────────────────────────────────
         function openAddStockModal(variantId) {
             $('#addStockError').addClass('d-none');
-            $('#addStockNotes').val('');
             document.getElementById('addStockVariantsList').style.display = 'none';
             document.getElementById('addStockVariantsBody').innerHTML = '';
             document.getElementById('addStockTotal').textContent = '';
             document.getElementById('addStockGlobalQty').value = '';
 
-            // Load products into dropdown
-            $.ajax({
-                type: 'POST', url: 'Stock.aspx/GetProductsForDropdown',
-                contentType: 'application/json; charset=utf-8', dataType: 'json',
-                success: function (r) {
-                    var sel = document.getElementById('addStockProduct');
-                    sel.innerHTML = '<option value="">-- Select Product --</option>';
-                    JSON.parse(r.d).forEach(function (p) {
-                        sel.innerHTML += '<option value="' + p.ProductId + '">'
-                            + esc(p.ProductCode + ' - ' + p.ProductName) + '</option>';
-                    });
+            if (variantId > 0) {
+                // Row button — show only this one variant, no AJAX needed
+                var item = stockData.find(function (x) { return x.VariantId == variantId; });
+                if (!item) return;
 
-                    // If opened from a row button, auto-select that product
-                    if (variantId > 0) {
-                        var item = stockData.find(function (x) { return x.VariantId == variantId; });
-                        if (item && item.ProductId) {
-                            sel.value = item.ProductId;
-                            loadVariantsForAdd(variantId);
-                        }
-                    } else {
-                        sel.value = '';
+                // Show product name as read-only label
+                var sel = document.getElementById('addStockProduct');
+                sel.innerHTML = '<option value="' + item.ProductId + '">'
+                    + esc(item.ProductCode + ' - ' + item.ProductName) + '</option>';
+                sel.value = item.ProductId;
+                sel.disabled = true;
+
+                buildSingleVariantRow(item);
+            } else {
+                // Header button — show product dropdown, load all variants on select
+                var sel2 = document.getElementById('addStockProduct');
+                sel2.disabled = false;
+                sel2.innerHTML = '<option value="">-- Select Product --</option>';
+
+                $.ajax({
+                    type: 'POST', url: 'Stock.aspx/GetProductsForDropdown',
+                    contentType: 'application/json; charset=utf-8', dataType: 'json',
+                    success: function (r) {
+                        JSON.parse(r.d).forEach(function (p) {
+                            sel2.innerHTML += '<option value="' + p.ProductId + '">'
+                                + esc(p.ProductCode + ' - ' + p.ProductName) + '</option>';
+                        });
+                        sel2.value = '';
                     }
-                }
-            });
+                });
+            }
 
             bootstrap.Modal.getOrCreateInstance(document.getElementById('addStockModal')).show();
+        }
+
+        function buildSingleVariantRow(item) {
+            var skuText    = item.SKUNumbers || (item.Color + ' / Sz ' + item.Size);
+            var searchText = (item.SKUNumbers + ' ' + item.Color + ' ' + item.Size).toLowerCase();
+            var low        = item.WarehouseStock === 0;
+
+            var row = '<tr data-search="' + esc(searchText) + '">'
+                + '<td><span class="fw-semibold">' + esc(skuText) + '</span>'
+                + '&nbsp;<button class="btn btn-link btn-sm p-0" style="font-size:.72rem;color:#94a3b8;vertical-align:middle;" '
+                + 'onclick="copySku(\'' + esc(skuText) + '\')" title="Copy SKU"><i class="fas fa-copy"></i></button>'
+                + '<br><small class="text-muted">' + esc(item.Color) + ' / Size ' + esc(item.Size) + '</small></td>'
+                + '<td class="text-center"><span class="badge ' + (low ? 'bg-danger' : 'bg-success') + '">'
+                + item.WarehouseStock + '</span></td>'
+                + '<td><input type="number" class="form-control form-control-sm add-variant-qty" '
+                + 'data-variant-id="' + item.VariantId + '" min="0" placeholder="0" autofocus '
+                + 'oninput="updateAddStockTotal()" /></td>'
+                + '</tr>';
+
+            document.getElementById('addStockVariantsBody').innerHTML = row;
+            document.getElementById('addStockVariantCount').textContent = '1 variant';
+            document.getElementById('addStockTotal').textContent = '';
+            document.getElementById('addStockGlobalQty').value = '';
+            document.getElementById('addStockVariantsList').style.display = '';
         }
 
         function loadVariantsForAdd(highlightVariantId) {
@@ -830,16 +961,36 @@
 
             document.getElementById('allocVariantId').value = variantId;
             document.getElementById('allocVariantLabel').textContent =
-                item.ProductCode + ' — ' + item.Color + ' / Size ' + item.Size;
-            document.getElementById('allocWarehouseStock').textContent = item.WarehouseStock;
-            document.getElementById('allocMaxHint').textContent = item.WarehouseStock;
-            document.getElementById('allocQty').value  = '';
-            document.getElementById('allocNotes').value = '';
+                item.ProductCode + ' - ' + item.Color + ' / Size ' + item.Size;
+            document.getElementById('allocQty').value = '';
+            document.getElementById('allocMaxHint').textContent = '-';
+            document.getElementById('allocFromAvailRow').classList.add('d-none');
             $('#allocError').addClass('d-none');
 
-            // Fill marketplace dropdown
+            // Stock summary badges
+            var summary = '<span class="badge bg-primary">Warehouse: ' + item.WarehouseStock + '</span>';
+            allMarketplaces.forEach(function (m, idx) {
+                var qty = (item.MarketplaceStocks && item.MarketplaceStocks[m.MarketplaceId]) || 0;
+                var c   = MP_COLORS[idx % MP_COLORS.length];
+                summary += '<span class="badge ms-1" style="background:' + c + ';">'
+                         + esc(m.MarketplaceName) + ': ' + qty + '</span>';
+            });
+            document.getElementById('allocStockSummary').innerHTML = summary;
+
+            // Allocate From: Warehouse + each marketplace
+            var fromSel = document.getElementById('allocFrom');
+            fromSel.innerHTML = '<option value="">-- Select Source --</option>'
+                + '<option value="0">Warehouse (' + item.WarehouseStock + ')</option>';
+            allMarketplaces.forEach(function (m) {
+                var qty = (item.MarketplaceStocks && item.MarketplaceStocks[m.MarketplaceId]) || 0;
+                fromSel.innerHTML += '<option value="' + m.MarketplaceId + '">'
+                    + esc(m.MarketplaceName) + ' (' + qty + ')</option>';
+            });
+            fromSel.value = '';
+
+            // Allocate To: all marketplaces
             var mpSel = document.getElementById('allocMarketplace');
-            mpSel.innerHTML = '<option value="">-- Select Marketplace --</option>';
+            mpSel.innerHTML = '<option value="">-- Select Destination --</option>';
             allMarketplaces.forEach(function (m) {
                 var cur = (item.MarketplaceStocks && item.MarketplaceStocks[m.MarketplaceId]) || 0;
                 mpSel.innerHTML += '<option value="' + m.MarketplaceId + '">'
@@ -850,18 +1001,30 @@
         }
 
         function saveAllocate() {
-            var vid  = parseInt(document.getElementById('allocVariantId').value);
-            var mpid = parseInt(document.getElementById('allocMarketplace').value) || 0;
-            var qty  = parseInt($('#allocQty').val()) || 0;
-            var notes = $('#allocNotes').val();
+            var vid    = parseInt(document.getElementById('allocVariantId').value);
+            var fromEl = document.getElementById('allocFrom');
+            var fromId = fromEl.value === '' ? null : parseInt(fromEl.value);
+            var toId   = parseInt(document.getElementById('allocMarketplace').value) || 0;
+            var qty    = parseInt($('#allocQty').val()) || 0;
 
-            if (!mpid)   { showAllocError('Please select a marketplace.'); return; }
-            if (qty < 1) { showAllocError('Enter a valid quantity.'); return; }
+            if (fromId === null)  { showAllocError('Please select a source (Allocate From).'); return; }
+            if (!toId)            { showAllocError('Please select a destination (Allocate To).'); return; }
+            if (fromId === toId)  { showAllocError('Source and destination cannot be the same.'); return; }
+            if (qty < 1)          { showAllocError('Enter a valid quantity.'); return; }
+
+            var url, data;
+            if (fromId === 0) {
+                url  = 'Stock.aspx/AllocateStock';
+                data = { variantId: vid, marketplaceId: toId, quantity: qty, notes: '' };
+            } else {
+                url  = 'Stock.aspx/TransferStock';
+                data = { variantId: vid, fromMarketplaceId: fromId, toMarketplaceId: toId, quantity: qty, notes: '' };
+            }
 
             $.ajax({
-                type: 'POST', url: 'Stock.aspx/AllocateStock',
+                type: 'POST', url: url,
                 contentType: 'application/json; charset=utf-8', dataType: 'json',
-                data: JSON.stringify({ variantId: vid, marketplaceId: mpid, quantity: qty, notes: notes }),
+                data: JSON.stringify(data),
                 success: function (r) {
                     var res = JSON.parse(r.d);
                     if (res.success) {
@@ -873,6 +1036,27 @@
                     }
                 }
             });
+        }
+
+        function onAllocFromChange() {
+            var fromVal = document.getElementById('allocFrom').value;
+            if (fromVal === '') {
+                document.getElementById('allocFromAvailRow').classList.add('d-none');
+                document.getElementById('allocMaxHint').textContent = '-';
+                return;
+            }
+            var fromId  = parseInt(fromVal);
+            var vid     = parseInt(document.getElementById('allocVariantId').value);
+            var item    = stockData.find(function (x) { return x.VariantId === vid; });
+            if (!item) return;
+
+            var avail = fromId === 0
+                ? item.WarehouseStock
+                : ((item.MarketplaceStocks && item.MarketplaceStocks[fromId]) || 0);
+
+            document.getElementById('allocFromAvailQty').textContent = avail;
+            document.getElementById('allocMaxHint').textContent = avail;
+            document.getElementById('allocFromAvailRow').classList.remove('d-none');
         }
 
         function showAllocError(msg) {
@@ -890,11 +1074,23 @@
 
             document.getElementById('returnVariantId').value = variantId;
             document.getElementById('returnVariantLabel').textContent =
-                item.ProductCode + ' — ' + item.Color + ' / Size ' + item.Size;
-            document.getElementById('returnQty').value  = '';
-            document.getElementById('returnNotes').value = '';
-            document.getElementById('returnMaxHint').textContent = '—';
+                item.ProductCode + ' - ' + item.Color + ' / Size ' + item.Size;
+            document.getElementById('returnQty').value = '';
+            document.getElementById('returnReason').value = '';
+            document.getElementById('returnMaxHint').textContent = '-';
+            document.getElementById('chkDamaged').checked = false;
+            onDamagedToggle();
             $('#returnError').addClass('d-none');
+
+            // Stock summary badges: Warehouse + each marketplace
+            var summary = '<span class="badge bg-primary">Warehouse: ' + item.WarehouseStock + '</span>';
+            allMarketplaces.forEach(function (m, idx) {
+                var qty = (item.MarketplaceStocks && item.MarketplaceStocks[m.MarketplaceId]) || 0;
+                var c   = MP_COLORS[idx % MP_COLORS.length];
+                summary += '<span class="badge ms-1" style="background:' + c + ';">'
+                         + esc(m.MarketplaceName) + ': ' + qty + '</span>';
+            });
+            document.getElementById('returnStockSummary').innerHTML = summary;
 
             // Fill marketplace dropdown (only those with stock > 0)
             var mpSel = document.getElementById('returnMarketplace');
@@ -911,25 +1107,29 @@
         }
 
         function onReturnMpChange() {
-            var sel = document.getElementById('returnMarketplace');
-            var opt = sel.options[sel.selectedIndex];
-            var stock = opt ? (opt.getAttribute('data-stock') || '—') : '—';
+            var sel   = document.getElementById('returnMarketplace');
+            var opt   = sel.options[sel.selectedIndex];
+            var stock = (opt && opt.getAttribute('data-stock')) ? opt.getAttribute('data-stock') : '-';
             document.getElementById('returnMaxHint').textContent = stock;
         }
 
         function saveReturn() {
-            var vid   = parseInt(document.getElementById('returnVariantId').value);
-            var mpid  = parseInt(document.getElementById('returnMarketplace').value) || 0;
-            var qty   = parseInt($('#returnQty').val()) || 0;
-            var notes = $('#returnNotes').val();
+            var vid    = parseInt(document.getElementById('returnVariantId').value);
+            var mpid   = parseInt(document.getElementById('returnMarketplace').value) || 0;
+            var qty    = parseInt($('#returnQty').val()) || 0;
+            var reason = $('#returnReason').val().trim();
+
+            var damaged = document.getElementById('chkDamaged').checked;
 
             if (!mpid)   { showReturnError('Please select a marketplace.'); return; }
             if (qty < 1) { showReturnError('Enter a valid quantity.'); return; }
+            if (!reason) { showReturnError('Reason is required.'); return; }
 
             $.ajax({
-                type: 'POST', url: 'Stock.aspx/ReturnStock',
+                type: 'POST',
+                url: damaged ? 'Stock.aspx/MarkDamaged' : 'Stock.aspx/ReturnStock',
                 contentType: 'application/json; charset=utf-8', dataType: 'json',
-                data: JSON.stringify({ variantId: vid, marketplaceId: mpid, quantity: qty, notes: notes }),
+                data: JSON.stringify({ variantId: vid, marketplaceId: mpid, quantity: qty, notes: reason }),
                 success: function (r) {
                     var res = JSON.parse(r.d);
                     if (res.success) {
@@ -943,6 +1143,13 @@
             });
         }
 
+        function onDamagedToggle() {
+            var damaged = document.getElementById('chkDamaged').checked;
+            document.getElementById('btnReturnIcon').className  = damaged ? 'fas fa-trash-alt me-1' : 'fas fa-undo me-1';
+            document.getElementById('btnReturnLabel').textContent = damaged ? 'Write Off Damaged' : 'Return to Warehouse';
+            document.getElementById('btnReturnSave').className  = 'btn ' + (damaged ? 'btn-danger' : 'btn-warning');
+        }
+
         function showReturnError(msg) {
             var el = document.getElementById('returnError');
             el.textContent = msg; el.classList.remove('d-none');
@@ -954,7 +1161,7 @@
         function openHistoryModal(variantId, label) {
             document.getElementById('historyVariantLabel').textContent = label;
             document.getElementById('historyBody').innerHTML =
-                '<tr><td colspan="6" class="text-center text-muted py-3">Loading…</td></tr>';
+                '<tr><td colspan="7" class="text-center text-muted py-3">Loading...</td></tr>';
             bootstrap.Modal.getOrCreateInstance(document.getElementById('historyModal')).show();
 
             $.ajax({
@@ -969,6 +1176,7 @@
                         else if (m.MovementType === 'ALLOCATE') badge = '<span class="badge bg-primary">ALLOCATE</span>';
                         else if (m.MovementType === 'RETURN')   badge = '<span class="badge bg-warning text-dark">RETURN</span>';
                         else if (m.MovementType === 'TRANSFER') badge = '<span class="badge bg-info text-dark">TRANSFER</span>';
+                        else if (m.MovementType === 'DAMAGED')  badge = '<span class="badge bg-dark">DAMAGED</span>';
                         else badge = '<span class="badge bg-secondary">' + esc(m.MovementType) + '</span>';
 
                         rows += '<tr>'
@@ -978,10 +1186,11 @@
                             + '<td><small>' + esc(m.To)   + '</small></td>'
                             + '<td class="text-center fw-semibold">' + m.Quantity + '</td>'
                             + '<td><small class="text-primary fw-semibold">' + esc(m.CreatedBy || '-') + '</small></td>'
+                            + '<td><small class="text-muted">' + esc(m.Notes || '-') + '</small></td>'
                             + '</tr>';
                     });
                     document.getElementById('historyBody').innerHTML = rows ||
-                        '<tr><td colspan="6" class="text-center text-muted py-3">No movements recorded yet.</td></tr>';
+                        '<tr><td colspan="7" class="text-center text-muted py-3">No movements recorded yet.</td></tr>';
                 }
             });
         }
@@ -1282,6 +1491,70 @@
                     }
                 });
             });
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // ALL HISTORY MODAL
+        // ─────────────────────────────────────────────────────────────────────
+        var allHistoryData = [];
+
+        function openAllHistoryModal() {
+            document.getElementById('allHistorySearch').value = '';
+            document.getElementById('allHistoryTypeFilter').value = '';
+            document.getElementById('allHistoryBody').innerHTML =
+                '<tr><td colspan="8" class="text-center text-muted py-4">Loading...</td></tr>';
+            document.getElementById('allHistoryCount').textContent = '';
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('allHistoryModal')).show();
+
+            $.ajax({
+                type: 'POST', url: 'Stock.aspx/GetAllStockMovements',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                success: function (r) {
+                    allHistoryData = JSON.parse(r.d);
+                    renderAllHistory(allHistoryData);
+                }
+            });
+        }
+
+        function renderAllHistory(data) {
+            var rows = '';
+            data.forEach(function (m) {
+                var badge = '';
+                if      (m.MovementType === 'RECEIVE')  badge = '<span class="badge bg-success">RECEIVE</span>';
+                else if (m.MovementType === 'ALLOCATE') badge = '<span class="badge bg-primary">ALLOCATE</span>';
+                else if (m.MovementType === 'TRANSFER') badge = '<span class="badge bg-info text-dark">TRANSFER</span>';
+                else if (m.MovementType === 'RETURN')   badge = '<span class="badge bg-warning text-dark">RETURN</span>';
+                else if (m.MovementType === 'DAMAGED')  badge = '<span class="badge bg-dark">DAMAGED</span>';
+                else badge = '<span class="badge bg-secondary">' + esc(m.MovementType) + '</span>';
+
+                rows += '<tr data-type="' + esc(m.MovementType) + '" data-search="'
+                    + esc((m.SKUDisplay + ' ' + m.ProductCode + ' ' + m.ProductName + ' ' + m.MovementType + ' ' + m.CreatedBy + ' ' + m.Notes).toLowerCase()) + '">'
+                    + '<td><small>' + esc(m.CreatedDate) + '</small></td>'
+                    + '<td><span class="fw-semibold" style="font-size:.82rem;">' + esc(m.SKUDisplay) + '</span>'
+                    + '<br><small class="text-muted">' + esc(m.ProductCode + ' - ' + m.ProductName) + '</small></td>'
+                    + '<td>' + badge + '</td>'
+                    + '<td><small>' + esc(m.From) + '</small></td>'
+                    + '<td><small>' + esc(m.To)   + '</small></td>'
+                    + '<td class="text-center fw-bold">' + m.Quantity + '</td>'
+                    + '<td><small class="text-primary fw-semibold">' + esc(m.CreatedBy || '-') + '</small></td>'
+                    + '<td><small class="text-muted">' + esc(m.Notes || '-') + '</small></td>'
+                    + '</tr>';
+            });
+            document.getElementById('allHistoryBody').innerHTML = rows ||
+                '<tr><td colspan="8" class="text-center text-muted py-4">No movements recorded yet.</td></tr>';
+            document.getElementById('allHistoryCount').textContent = data.length + ' record(s)';
+        }
+
+        function filterAllHistory() {
+            var q    = document.getElementById('allHistorySearch').value.toLowerCase().trim();
+            var type = document.getElementById('allHistoryTypeFilter').value;
+            var filtered = allHistoryData.filter(function (m) {
+                var matchType = !type || m.MovementType === type;
+                var matchText = !q    || (m.SKUDisplay + ' ' + m.ProductCode + ' ' + m.ProductName + ' '
+                                        + m.MovementType + ' ' + m.CreatedBy + ' ' + m.Notes).toLowerCase().indexOf(q) !== -1;
+                return matchType && matchText;
+            });
+            renderAllHistory(filtered);
         }
 
         // ─────────────────────────────────────────────────────────────────────
