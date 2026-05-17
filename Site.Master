@@ -67,10 +67,9 @@
             <div class="sidebar-section">Inventory</div>
             <ul class="sidebar-nav">
                 <li>
-                    <a href="#" data-page="stock" class="disabled-nav">
+                    <a href="<%: ResolveUrl("~/Stock.aspx") %>" data-page="stock">
                         <i class="fas fa-warehouse nav-icon"></i>
                         <span>Stock Management</span>
-                        <span class="nav-badge">Soon</span>
                     </a>
                 </li>
                 <li>

@@ -9,6 +9,13 @@ namespace Onfoot_Inventory
     {
         protected void Page_Load(object sender, EventArgs e)
         {
+            // Redirect to login if not authenticated
+            if (Session["UserID"] == null || !HttpContext.Current.User.Identity.IsAuthenticated)
+            {
+                FormsAuthentication.SignOut();
+                Response.Redirect("~/Login.aspx", true);
+            }
+
             if (!IsPostBack)
                 PopulateUserBar();
         }
