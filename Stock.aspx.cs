@@ -64,6 +64,13 @@ namespace Onfoot_Inventory
                 ?? "Unknown";
         }
 
+        private static string GetPrimarySKU(string skuNumbers)
+        {
+            if (string.IsNullOrWhiteSpace(skuNumbers)) return string.Empty;
+            int comma = skuNumbers.IndexOf(',');
+            return comma >= 0 ? skuNumbers.Substring(0, comma).Trim() : skuNumbers.Trim();
+        }
+
         // ============================================================
         // GET ACTIVE MARKETPLACES  (for dropdowns)
         // ============================================================
@@ -267,7 +274,7 @@ namespace Onfoot_Inventory
                                 VariantId     = Convert.ToInt32(rdr["VariantId"]),
                                 Color         = rdr["Color"].ToString(),
                                 Size          = rdr["Size"].ToString(),
-                                SKUNumbers    = rdr.IsDBNull(rdr.GetOrdinal("SKUNumbers")) ? "" : rdr["SKUNumbers"].ToString(),
+                                SKUNumbers    = GetPrimarySKU(rdr.IsDBNull(rdr.GetOrdinal("SKUNumbers")) ? "" : rdr["SKUNumbers"].ToString()),
                                 StockQuantity = Convert.ToInt32(rdr["StockQuantity"])
                             });
                     }
@@ -309,7 +316,7 @@ namespace Onfoot_Inventory
                             ProductName       = rdr["ProductName"].ToString(),
                             Color             = rdr["Color"].ToString(),
                             Size              = rdr["Size"].ToString(),
-                            SKUNumbers        = rdr.IsDBNull(rdr.GetOrdinal("SKUNumbers")) ? "" : rdr["SKUNumbers"].ToString(),
+                            SKUNumbers        = GetPrimarySKU(rdr.IsDBNull(rdr.GetOrdinal("SKUNumbers")) ? "" : rdr["SKUNumbers"].ToString()),
                             WarehouseStock    = Convert.ToInt32(rdr["WarehouseStock"]),
                             MinStockLevel     = Convert.ToInt32(rdr["MinStockLevel"]),
                             MarketplaceStocks = new Dictionary<int, int>()
@@ -754,7 +761,7 @@ namespace Onfoot_Inventory
                         string to   = rdr.IsDBNull(rdr.GetOrdinal("ToName"))   ? "Warehouse" : rdr["ToName"].ToString();
                         list.Add(new {
                             MovementType = rdr["MovementType"].ToString(),
-                            SKUDisplay   = rdr["SKUDisplay"].ToString(),
+                            SKUDisplay   = GetPrimarySKU(rdr["SKUDisplay"].ToString()),
                             ProductCode  = rdr["ProductCode"].ToString(),
                             ProductName  = rdr["ProductName"].ToString(),
                             From         = from,
