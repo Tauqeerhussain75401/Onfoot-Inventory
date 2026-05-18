@@ -18,6 +18,18 @@
         .stat-website  { border-color:#2563eb; }
         .stat-daraz    { border-color:#f97316; }
         .stat-markaz   { border-color:#16a34a; }
+        .variant-check-item:hover { background:#f8faff !important; }
+        #manualSaleModal { padding: 0 !important; }
+        #manualSaleModal .modal-dialog {
+            max-width: 84%;
+            width: 84%;
+            margin: 2.5vh 8%;
+            height: calc(100% - 5vh);
+        }
+        #manualSaleModal .modal-content {
+            height: 100%;
+            border-radius: 6px;
+        }
     </style>
 </asp:Content>
 
@@ -38,8 +50,11 @@
             <button class="btn btn-outline-secondary btn-sm" onclick="loadSales()" title="Refresh">
                 <i class="fas fa-sync-alt me-1"></i> Refresh
             </button>
+            <button class="btn btn-success" onclick="openManualSaleModal()">
+                <i class="fas fa-pencil-alt me-1"></i> Manual Sale
+            </button>
             <button class="btn btn-primary" onclick="openAddSaleModal()">
-                <i class="fas fa-plus me-1"></i> New Sale
+                <i class="fas fa-file-pdf me-1"></i> BOL Upload
             </button>
         </div>
     </div>
@@ -381,6 +396,131 @@
                     <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">No, Keep It</button>
                     <button type="button" class="btn btn-danger px-4" id="btnConfirmCancel" onclick="executeCancel()">
                         <i class="fas fa-ban me-1"></i> Yes, Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== MANUAL SALE MODAL ========== -->
+    <div class="modal fade" id="manualSaleModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="fas fa-pencil-alt me-2"></i>Manual Sale Entry</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+
+                    <!-- Sale Header -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Marketplace <span class="text-danger">*</span></label>
+                            <select id="ddlManualMarketplace" class="form-select" onchange="loadVariants()">
+                                <option value="">Loading...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Bill Number <span class="text-danger">*</span></label>
+                            <input type="text" id="txtManualBillNo" class="form-control" placeholder="Auto-filled or enter manually" maxlength="100" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Sale Date <span class="text-danger">*</span></label>
+                            <input type="date" id="txtManualSaleDate" class="form-control" onchange="autoFillManualBillNo()" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Notes</label>
+                            <input type="text" id="txtManualNotes" class="form-control" placeholder="Optional notes" maxlength="500" />
+                        </div>
+                    </div>
+
+                    <hr class="my-2" />
+
+                    <!-- Product Multi-Select Checkbox Dropdown -->
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-1"><i class="fas fa-boxes me-1 text-success"></i>Select Products</label>
+                        <div class="d-flex gap-2 align-items-start">
+                            <div class="flex-grow-1 position-relative" id="variantDropdownWrapper">
+                                <button type="button" id="btnVariantDropdown"
+                                        class="form-select text-start text-truncate"
+                                        style="cursor:pointer;"
+                                        onclick="toggleVariantDropdown(event)">
+                                    <span id="variantDropdownLabel" class="text-muted">Click to select products...</span>
+                                </button>
+                                <div id="variantDropdownPanel" class="d-none border rounded shadow-sm bg-white"
+                                     style="position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:1055;display:flex;flex-direction:column;max-height:480px;">
+                                    <div class="p-2 border-bottom bg-light flex-shrink-0">
+                                        <input type="text" id="txtVariantFilter" class="form-control form-control-sm"
+                                               placeholder="Search product, SKU, color, size..."
+                                               oninput="filterVariantList()"
+                                               onclick="event.stopPropagation()" />
+                                    </div>
+                                    <div id="variantCheckboxList" style="overflow-y:auto;flex:1;">
+                                        <div class="text-center text-muted py-3 small">
+                                            <i class="fas fa-spinner fa-spin me-1"></i> Loading products...
+                                        </div>
+                                    </div>
+                                    <div class="px-3 py-2 border-top bg-light flex-shrink-0 d-flex justify-content-between align-items-center">
+                                        <small id="variantSelectCount" class="text-muted">0 selected</small>
+                                        <button type="button" class="btn btn-link btn-sm p-0 text-muted" onclick="clearVariantSelection()">Clear all</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="btn btn-primary flex-shrink-0" type="button" onclick="addSelectedVariants()">
+                                <i class="fas fa-plus me-1"></i> Add Selected
+                            </button>
+                        </div>
+                        <div id="variantStockError" class="mt-1" style="display:none;"></div>
+                    </div>
+
+                    <!-- Sale Items Heading -->
+                    <div class="d-flex align-items-center gap-2 mb-2 mt-1">
+                        <i class="fas fa-list text-success"></i>
+                        <span class="fw-semibold" style="font-size:0.95rem;">Sale Items</span>
+                        <span id="manualItemCount" class="badge bg-success ms-1">0</span>
+                    </div>
+
+                    <!-- Sale Items Table -->
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered sale-items-table mb-1">
+                            <thead class="table-success">
+                                <tr style="font-size:0.95rem;">
+                                    <th style="width:30px">#</th>
+                                    <th style="width:150px">Order ID</th>
+                                    <th style="width:220px">SKU</th>
+                                    <th style="width:55px">Color</th>
+                                    <th style="width:55px">Size</th>
+                                    <th style="width:55px" class="text-center">Qty</th>
+                                    <th style="width:120px">Sale Price</th>
+                                    <th style="width:100px">Total</th>
+                                    <th style="width:25px"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="manualSaleItemsBody">
+                                <tr>
+                                    <td colspan="9" class="text-center text-muted py-3">
+                                        <i class="fas fa-inbox me-1"></i> No items added. Search and add SKU above.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Grand Total -->
+                    <div class="text-end">
+                        <span class="text-muted me-2">Total Qty:</span>
+                        <strong id="lblManualTotalQty">0</strong>
+                        <span class="ms-4 text-muted me-2">Grand Total:</span>
+                        <strong class="text-success fs-6" id="lblManualGrandTotal">Rs. 0.00</strong>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1"></i> Cancel
+                    </button>
+                    <button type="button" id="btnSaveManualSale" class="btn btn-success" onclick="saveManualSale()">
+                        <i class="fas fa-save me-1"></i> Save Sale
                     </button>
                 </div>
             </div>
@@ -1039,6 +1179,356 @@
                     $('#customerModalBody').html(html);
                 },
                 error: function () { $('#customerModalBody').html('<p class="text-danger text-center">Failed to load.</p>'); }
+            });
+        }
+
+        /* ============================================================ MANUAL SALE */
+        var manualSaleItems = [];
+
+        function loadManualMarketplaces(callback) {
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/GetMarketplaces',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                success: function (res) {
+                    var markets = JSON.parse(res.d);
+                    var $sel = $('#ddlManualMarketplace').empty();
+                    if (!markets || markets.length === 0) {
+                        $sel.append('<option value="">No marketplaces found</option>');
+                    } else {
+                        $.each(markets, function (i, m) {
+                            $sel.append('<option value="' + escHtml(m.MarketplaceName) + '">' + escHtml(m.MarketplaceName) + '</option>');
+                        });
+                    }
+                    if (callback) callback();
+                },
+                error: function () {
+                    $('#ddlManualMarketplace').html('<option value="">Failed to load</option>');
+                }
+            });
+        }
+
+        function openManualSaleModal() {
+            manualSaleItems = [];
+            renderManualItems();
+            $('#txtManualBillNo, #txtManualNotes').val('');
+            var today = new Date().toISOString().split('T')[0];
+            $('#txtManualSaleDate').val(today);
+            selectedVariantIds = {};
+            updateVariantDropdownLabel();
+            $('#variantStockError').hide().html('');
+            loadManualMarketplaces(function () { loadVariants(); });
+            $('#variantDropdownPanel').addClass('d-none');
+            $('#txtVariantFilter').val('');
+            new bootstrap.Modal(document.getElementById('manualSaleModal')).show();
+            // Auto-fill bill number
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/GetNextBillNumber',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                data: JSON.stringify({ saleDate: today }),
+                success: function (r) { $('#txtManualBillNo').val(JSON.parse(r.d)); }
+            });
+        }
+
+        function autoFillManualBillNo() {
+            var d = $('#txtManualSaleDate').val();
+            if (!d || $.trim($('#txtManualBillNo').val())) return;
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/GetNextBillNumber',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                data: JSON.stringify({ saleDate: d }),
+                success: function (r) { $('#txtManualBillNo').val(JSON.parse(r.d)); }
+            });
+        }
+
+        /* ---- Variant checkbox dropdown ---- */
+        var allVariants      = [];
+        var selectedVariantIds = {};   // { variantId: variantObj }
+
+        function loadVariants() {
+            var marketplace = $('#ddlManualMarketplace').val() || '';
+            $('#variantCheckboxList').html('<div class="text-center text-muted py-3 small"><i class="fas fa-spinner fa-spin me-1"></i> Loading products...</div>');
+            selectedVariantIds = {};
+            updateVariantDropdownLabel();
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/GetAllVariants',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                data: JSON.stringify({ marketplaceName: marketplace }),
+                success: function (res) {
+                    allVariants = JSON.parse(res.d);
+                    renderVariantCheckboxes(allVariants);
+                },
+                error: function () {
+                    $('#variantCheckboxList').html('<div class="text-center text-danger py-2 small"><i class="fas fa-times-circle me-1"></i>Failed to load products.</div>');
+                }
+            });
+        }
+
+        function renderVariantCheckboxes(variants) {
+            if (!variants || variants.length === 0) {
+                $('#variantCheckboxList').html('<div class="text-center text-muted py-3 small">No products found.</div>');
+                return;
+            }
+            var html = '';
+            variants.forEach(function (v) {
+                var checked    = selectedVariantIds[v.VariantId] ? 'checked' : '';
+                var rowBg      = selectedVariantIds[v.VariantId] ? 'background:#f0fdf4;' : '';
+                var stockClass = v.StockQty <= 0 ? 'text-danger' : v.StockQty < 5 ? 'text-warning' : 'text-muted';
+                html += '<div class="variant-check-item d-flex align-items-center gap-2 px-3 py-2 border-bottom" '
+                      +     'style="cursor:pointer;' + rowBg + '" '
+                      +     'data-vid="' + v.VariantId + '" '
+                      +     'onclick="toggleVariantCheck(' + v.VariantId + ',this)">'
+                      + '<input type="checkbox" class="form-check-input mt-0 flex-shrink-0" style="width:1.1rem;height:1.1rem;" ' + checked
+                      +        ' onclick="event.stopPropagation();toggleVariantCheck(' + v.VariantId + ',this.closest(\'.variant-check-item\'))" />'
+                      + '<div class="flex-grow-1" style="min-width:0;">'
+                      +     '<span class="fw-semibold d-block text-truncate" style="font-size:0.92rem;" title="' + escHtml(v.ProductName) + '">'
+                      +         escHtml(v.ProductName)
+                      +         (v.ProductCode ? ' <span class="text-muted fw-normal" style="font-size:0.85rem;">(' + escHtml(v.ProductCode) + ')</span>' : '')
+                      +     '</span>'
+                      +     '<span class="badge bg-secondary me-1" style="font-size:0.75rem;">' + escHtml(v.Color) + '</span>'
+                      +     '<span class="badge bg-light text-dark border me-1" style="font-size:0.75rem;">Sz&nbsp;' + escHtml(v.Size) + '</span>'
+                      +     '<code style="font-size:0.78rem;">' + escHtml(v.SKUNumber) + '</code>'
+                      + '</div>'
+                      + '<span class="' + stockClass + ' flex-shrink-0" style="font-size:0.85rem;font-weight:600;">Stk:&nbsp;' + v.StockQty + '</span>'
+                      + '</div>';
+            });
+            $('#variantCheckboxList').html(html);
+        }
+
+        function toggleVariantDropdown(e) {
+            if (e) e.stopPropagation();
+            var $p = $('#variantDropdownPanel');
+            if ($p.hasClass('d-none')) {
+                $p.removeClass('d-none').css('display', 'flex');
+                $('#txtVariantFilter').focus();
+            } else {
+                $p.addClass('d-none');
+            }
+        }
+
+        // Close when clicking outside
+        $(document).on('click.variantDropdown', function (e) {
+            if (!$(e.target).closest('#variantDropdownWrapper').length) {
+                $('#variantDropdownPanel').addClass('d-none');
+            }
+        });
+
+        function filterVariantList() {
+            var q = $.trim($('#txtVariantFilter').val()).toLowerCase();
+            if (!q) { renderVariantCheckboxes(allVariants); return; }
+            var filtered = allVariants.filter(function (v) {
+                return (v.ProductName || '').toLowerCase().indexOf(q) >= 0
+                    || (v.SKUNumber   || '').toLowerCase().indexOf(q) >= 0
+                    || (v.Color       || '').toLowerCase().indexOf(q) >= 0
+                    || (v.Size        || '').toLowerCase().indexOf(q) >= 0
+                    || (v.ProductCode || '').toLowerCase().indexOf(q) >= 0;
+            });
+            renderVariantCheckboxes(filtered);
+        }
+
+        function toggleVariantCheck(variantId, rowEl) {
+            var v = allVariants.find(function (x) { return x.VariantId === variantId; });
+            if (!v) return;
+            var $row = $(rowEl);
+            var $chk = $row.find('input[type="checkbox"]');
+            if (selectedVariantIds[variantId]) {
+                delete selectedVariantIds[variantId];
+                $chk.prop('checked', false);
+                $row.css('background', '');
+            } else {
+                selectedVariantIds[variantId] = v;
+                $chk.prop('checked', true);
+                $row.css('background', '#f0fdf4');
+            }
+            updateVariantDropdownLabel();
+        }
+
+        function updateVariantDropdownLabel() {
+            var vals  = Object.values(selectedVariantIds);
+            var count = vals.length;
+            $('#variantSelectCount').text(count + ' selected');
+            if (count === 0) {
+                $('#variantDropdownLabel').addClass('text-muted').text('Click to select products...');
+            } else {
+                var preview = vals.slice(0, 2).map(function (v) {
+                    return v.ProductName + ' (' + v.Color + ' Sz' + v.Size + ')';
+                }).join(', ');
+                if (vals.length > 2) preview += ' +' + (vals.length - 2) + ' more';
+                $('#variantDropdownLabel').removeClass('text-muted').text(count + ' selected: ' + preview);
+            }
+        }
+
+        function clearVariantSelection() {
+            selectedVariantIds = {};
+            updateVariantDropdownLabel();
+            filterVariantList();
+        }
+
+        function addSelectedVariants() {
+            var selected = Object.values(selectedVariantIds);
+            if (selected.length === 0) { showToast('Select at least one product.', 'warning'); return; }
+
+            $('#variantStockError').hide().html('');
+
+            var added = 0, skipped = 0, noStock = [];
+
+            selected.forEach(function (v) {
+                if (v.StockQty <= 0) {
+                    noStock.push({ name: v.ProductName, color: v.Color, size: v.Size, sku: v.SKUNumber });
+                    return;
+                }
+                if (manualSaleItems.some(function (x) { return x.variantId === v.VariantId; })) {
+                    skipped++; return;
+                }
+                manualSaleItems.push({
+                    variantId:   v.VariantId,
+                    sku:         v.SKUNumber,
+                    productName: v.ProductName,
+                    color:       v.Color,
+                    size:        v.Size,
+                    qty:         1,
+                    salePrice:   v.SalePrice,
+                    orderRef:    ''
+                });
+                added++;
+            });
+
+            if (noStock.length > 0) {
+                var errorHtml = '<div class="alert alert-danger py-2 px-3 mb-0" style="font-size:0.85rem;">'
+                              + '<i class="fas fa-times-circle me-1"></i>'
+                              + '<strong>' + noStock.length + ' product(s) not added &mdash; stock is 0:</strong>'
+                              + '<ul class="mb-0 mt-1 ps-3">';
+                noStock.forEach(function (item) {
+                    errorHtml += '<li>' + escHtml(item.name) + ' (' + escHtml(item.color) + ' Sz' + escHtml(item.size) + ')'
+                               + ' &mdash; <code>' + escHtml(item.sku) + '</code></li>';
+                });
+                errorHtml += '</ul></div>';
+                $('#variantStockError').html(errorHtml).show();
+            }
+
+            if (added > 0) {
+                renderManualItems();
+                selectedVariantIds = {};
+                updateVariantDropdownLabel();
+                filterVariantList();
+                $('#variantDropdownPanel').addClass('d-none');
+            }
+
+            if (added > 0 && skipped > 0)
+                showToast(added + ' added, ' + skipped + ' already in list.', 'info');
+            else if (added > 0 && noStock.length === 0)
+                showToast(added + ' product(s) added to sale.', 'success');
+            else if (added === 0 && noStock.length === 0)
+                showToast('All selected products are already in the list.', 'warning');
+        }
+
+        function removeManualItem(idx) { manualSaleItems.splice(idx, 1); renderManualItems(); }
+
+        function updateManualItemOrderRef(idx, val) { manualSaleItems[idx].orderRef = val; }
+
+        function updateManualItemQty(idx, val) {
+            manualSaleItems[idx].qty = parseInt(val) || 1;
+            refreshRowTotal(idx);
+            recalcManualTotals();
+        }
+
+        function updateManualItemPrice(idx, val) {
+            manualSaleItems[idx].salePrice = parseFloat(val) || 0;
+            refreshRowTotal(idx);
+            recalcManualTotals();
+        }
+
+        function refreshRowTotal(idx) {
+            var it = manualSaleItems[idx];
+            var lineTotal = (it.qty * it.salePrice);
+            $('#rowTotal_' + idx).text('Rs. ' + lineTotal.toLocaleString('en-PK', pkFmt));
+        }
+
+        function renderManualItems() {
+            var $body = $('#manualSaleItemsBody');
+            if (manualSaleItems.length === 0) {
+                $body.html('<tr><td colspan="9" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i> No items added. Search and add SKU above.</td></tr>');
+                $('#lblManualTotalQty').text('0');
+                $('#lblManualGrandTotal').text('Rs. 0.00');
+                return;
+            }
+            var html = '';
+            manualSaleItems.forEach(function (it, idx) {
+                var lineTotal = (it.qty * it.salePrice).toFixed(2);
+                html += '<tr style="font-size:0.93rem;">'
+                      + '<td class="text-center text-muted">' + (idx + 1) + '</td>'
+                      + '<td><input type="text" class="form-control" style="font-size:0.9rem;" placeholder="Order ID" value="' + escHtml(it.orderRef || '') + '" oninput="updateManualItemOrderRef(' + idx + ',this.value)" /></td>'
+                      + '<td><code style="font-size:0.88rem;">' + escHtml(it.sku) + '</code></td>'
+                      + '<td>' + (it.color ? '<span class="badge bg-secondary" style="font-size:0.8rem;">' + escHtml(it.color) + '</span>' : '—') + '</td>'
+                      + '<td class="text-center">' + escHtml(it.size) + '</td>'
+                      + '<td><input type="number" class="form-control text-center" style="font-size:0.9rem;" min="1" value="' + it.qty + '" onchange="updateManualItemQty(' + idx + ',this.value)" /></td>'
+                      + '<td><div class="input-group"><span class="input-group-text" style="font-size:0.88rem;">Rs.</span><input type="number" class="form-control" style="font-size:0.9rem;" min="0" step="0.01" value="' + (it.salePrice || '') + '" placeholder="0" onchange="updateManualItemPrice(' + idx + ',this.value)" /></div></td>'
+                      + '<td class="fw-semibold" id="rowTotal_' + idx + '" style="font-size:0.93rem;">Rs. ' + parseFloat(lineTotal).toLocaleString('en-PK', pkFmt) + '</td>'
+                      + '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeManualItem(' + idx + ')"><i class="fas fa-times"></i></button></td>'
+                      + '</tr>';
+            });
+            $body.html(html);
+            recalcManualTotals();
+        }
+
+        function recalcManualTotals() {
+            var totalQty = 0, grandTotal = 0;
+            manualSaleItems.forEach(function (it) { totalQty += it.qty; grandTotal += it.qty * it.salePrice; });
+            $('#lblManualTotalQty').text(totalQty);
+            $('#lblManualGrandTotal').text('Rs. ' + grandTotal.toLocaleString('en-PK', pkFmt));
+            $('#manualItemCount').text(manualSaleItems.length);
+        }
+
+        function saveManualSale() {
+            var billNo   = $.trim($('#txtManualBillNo').val());
+            var platform = $('#ddlManualMarketplace').val();
+            var saleDate = $('#txtManualSaleDate').val();
+
+            if (!platform) { shakeField('#ddlManualMarketplace'); showToast('Select a marketplace.', 'warning');  return; }
+            if (!billNo)   { shakeField('#txtManualBillNo');       showToast('Bill Number is required.', 'warning'); return; }
+            if (!saleDate) { shakeField('#txtManualSaleDate');     showToast('Sale Date is required.', 'warning');   return; }
+            if (manualSaleItems.length === 0) { showToast('Add at least one item.', 'warning'); return; }
+
+            var sale = {
+                SaleId:     0,
+                BillNumber: billNo,
+                Platform:   platform,
+                SaleDate:   saleDate,
+                Status:     'Completed',
+                Notes:      $.trim($('#txtManualNotes').val())
+            };
+
+            var itemsPayload = manualSaleItems.map(function (it) {
+                return {
+                    VariantId:   it.variantId,
+                    SKUNumber:   it.sku,
+                    ProductName: it.productName,
+                    Color:       it.color,
+                    Size:        it.size,
+                    Quantity:    it.qty,
+                    SalePrice:   it.salePrice,
+                    OrderRef:    it.orderRef || ''
+                };
+            });
+
+            var $btn = $('#btnSaveManualSale');
+            $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Saving...');
+
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/SaveSale',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                data: JSON.stringify({ sale: sale, itemsJson: JSON.stringify(itemsPayload), customersJson: '[]' }),
+                success: function (res) {
+                    var r = JSON.parse(res.d);
+                    if (r.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('manualSaleModal')).hide();
+                        showToast(r.message, 'success');
+                        loadSales(); loadStats();
+                    } else {
+                        showToast(r.message, 'danger');
+                    }
+                },
+                error: function () { showToast('An error occurred.', 'danger'); },
+                complete: function () { $btn.prop('disabled', false).html('<i class="fas fa-save me-1"></i> Save Sale'); }
             });
         }
 

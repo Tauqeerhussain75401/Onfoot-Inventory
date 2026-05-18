@@ -94,4 +94,15 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StockMovements_Variant
     CREATE INDEX IX_StockMovements_VariantId ON StockMovements(VariantId);
 GO
 
+-- ============================================================
+-- SaleItems.OrderRef  (order reference / order ID per item)
+-- ============================================================
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'SaleItems' AND COLUMN_NAME = 'OrderRef')
+BEGIN
+    ALTER TABLE SaleItems ADD OrderRef NVARCHAR(100) NULL;
+END
+GO
+
 PRINT 'DatabaseChanges applied successfully.';
