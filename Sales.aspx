@@ -1263,32 +1263,53 @@
             });
         }
 
+        function buildStockBadges(stocks) {
+            if (!stocks || stocks.length === 0) return '';
+            return stocks.map(function (s) {
+                var color = s.Stock <= 0 ? '#dc2626' : s.Stock < 5 ? '#d97706' : '#16a34a';
+                var short = escHtml(s.Name.substring(0, 3));
+                return '<span style="display:inline-block;font-size:0.68rem;font-weight:700;color:' + color + ';margin-right:4px;white-space:nowrap;">'
+                     + short + ':' + s.Stock + '</span>';
+            }).join('');
+        }
+
+        function primarySKU(skuNumbers) {
+            if (!skuNumbers) return '';
+            var first = skuNumbers.split(',')[0].trim();
+            return first;
+        }
+
         function renderVariantCheckboxes(variants) {
             if (!variants || variants.length === 0) {
                 $('#variantCheckboxList').html('<div class="text-center text-muted py-3 small">No products found.</div>');
                 return;
             }
+            var marketplace = $('#ddlManualMarketplace').val() || 'Stock';
             var html = '';
             variants.forEach(function (v) {
                 var checked    = selectedVariantIds[v.VariantId] ? 'checked' : '';
                 var rowBg      = selectedVariantIds[v.VariantId] ? 'background:#f0fdf4;' : '';
-                var stockClass = v.StockQty <= 0 ? 'text-danger' : v.StockQty < 5 ? 'text-warning' : 'text-muted';
+                var stockColor = v.StockQty <= 0 ? '#dc2626' : v.StockQty < 5 ? '#d97706' : '#16a34a';
+                var sku        = primarySKU(v.SKUNumber);
                 html += '<div class="variant-check-item d-flex align-items-center gap-2 px-3 py-2 border-bottom" '
                       +     'style="cursor:pointer;' + rowBg + '" '
                       +     'data-vid="' + v.VariantId + '" '
                       +     'onclick="toggleVariantCheck(' + v.VariantId + ',this)">'
                       + '<input type="checkbox" class="form-check-input mt-0 flex-shrink-0" style="width:1.1rem;height:1.1rem;" ' + checked
                       +        ' onclick="event.stopPropagation();toggleVariantCheck(' + v.VariantId + ',this.closest(\'.variant-check-item\'))" />'
-                      + '<div class="flex-grow-1" style="min-width:0;">'
+                      + '<div class="flex-grow-1" style="min-width:0;overflow:hidden;">'
                       +     '<span class="fw-semibold d-block text-truncate" style="font-size:0.92rem;" title="' + escHtml(v.ProductName) + '">'
                       +         escHtml(v.ProductName)
                       +         (v.ProductCode ? ' <span class="text-muted fw-normal" style="font-size:0.85rem;">(' + escHtml(v.ProductCode) + ')</span>' : '')
                       +     '</span>'
                       +     '<span class="badge bg-secondary me-1" style="font-size:0.75rem;">' + escHtml(v.Color) + '</span>'
                       +     '<span class="badge bg-light text-dark border me-1" style="font-size:0.75rem;">Sz&nbsp;' + escHtml(v.Size) + '</span>'
-                      +     '<code style="font-size:0.78rem;">' + escHtml(v.SKUNumber) + '</code>'
+                      +     '<code style="font-size:0.78rem;white-space:nowrap;">' + escHtml(sku) + '</code>'
                       + '</div>'
-                      + '<span class="' + stockClass + ' flex-shrink-0" style="font-size:0.85rem;font-weight:600;">Stk:&nbsp;' + v.StockQty + '</span>'
+                      + '<div class="flex-shrink-0 text-end" style="min-width:90px;">'
+                      +     '<div style="font-size:0.72rem;color:#6b7280;">' + escHtml(marketplace) + '</div>'
+                      +     '<div style="font-size:0.88rem;font-weight:700;color:' + stockColor + ';">' + v.StockQty + '</div>'
+                      + '</div>'
                       + '</div>';
             });
             $('#variantCheckboxList').html(html);
@@ -1380,14 +1401,15 @@
                     skipped++; return;
                 }
                 manualSaleItems.push({
-                    variantId:   v.VariantId,
-                    sku:         v.SKUNumber,
-                    productName: v.ProductName,
-                    color:       v.Color,
-                    size:        v.Size,
-                    qty:         1,
-                    salePrice:   v.SalePrice,
-                    orderRef:    ''
+                    variantId:    v.VariantId,
+                    sku:          v.SKUNumber,
+                    productName:  v.ProductName,
+                    color:        v.Color,
+                    size:         v.Size,
+                    qty:          1,
+                    salePrice:    v.SalePrice,
+                    orderRef:     '',
+                    marketStocks: v.MarketStocks || []
                 });
                 added++;
             });
@@ -1453,14 +1475,18 @@
             }
             var html = '';
             manualSaleItems.forEach(function (it, idx) {
-                var lineTotal = (it.qty * it.salePrice).toFixed(2);
+                var lineTotal   = (it.qty * it.salePrice).toFixed(2);
+                var stockHtml   = buildStockBadges(it.marketStocks);
+                var skuCell     = '<code style="font-size:0.88rem;">' + escHtml(it.sku) + '</code>'
+                                + (stockHtml ? '<br><span style="line-height:1.2;">' + stockHtml + '</span>' : '');
+                var qtyStyle    = 'font-size:0.9rem;font-weight:700;color:#1d4ed8;';
                 html += '<tr style="font-size:0.93rem;">'
                       + '<td class="text-center text-muted">' + (idx + 1) + '</td>'
                       + '<td><input type="text" class="form-control" style="font-size:0.9rem;" placeholder="Order ID" value="' + escHtml(it.orderRef || '') + '" oninput="updateManualItemOrderRef(' + idx + ',this.value)" /></td>'
-                      + '<td><code style="font-size:0.88rem;">' + escHtml(it.sku) + '</code></td>'
+                      + '<td>' + skuCell + '</td>'
                       + '<td>' + (it.color ? '<span class="badge bg-secondary" style="font-size:0.8rem;">' + escHtml(it.color) + '</span>' : '—') + '</td>'
                       + '<td class="text-center">' + escHtml(it.size) + '</td>'
-                      + '<td><input type="number" class="form-control text-center" style="font-size:0.9rem;" min="1" value="' + it.qty + '" onchange="updateManualItemQty(' + idx + ',this.value)" /></td>'
+                      + '<td><input type="number" class="form-control text-center" style="' + qtyStyle + '" min="1" value="' + it.qty + '" onchange="updateManualItemQty(' + idx + ',this.value)" /></td>'
                       + '<td><div class="input-group"><span class="input-group-text" style="font-size:0.88rem;">Rs.</span><input type="number" class="form-control" style="font-size:0.9rem;" min="0" step="0.01" value="' + (it.salePrice || '') + '" placeholder="0" onchange="updateManualItemPrice(' + idx + ',this.value)" /></div></td>'
                       + '<td class="fw-semibold" id="rowTotal_' + idx + '" style="font-size:0.93rem;">Rs. ' + parseFloat(lineTotal).toLocaleString('en-PK', pkFmt) + '</td>'
                       + '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeManualItem(' + idx + ')"><i class="fas fa-times"></i></button></td>'

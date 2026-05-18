@@ -95,6 +95,32 @@ IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StockMovements_Variant
 GO
 
 -- ============================================================
+-- SaleStockDeductions  (stock deducted per sale item)
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'SaleStockDeductions')
+BEGIN
+    CREATE TABLE SaleStockDeductions (
+        DeductionId   INT      IDENTITY(1,1) PRIMARY KEY,
+        SaleId        INT      NOT NULL,
+        SaleItemId    INT      NULL,
+        VariantId     INT      NOT NULL,
+        MarketplaceId INT      NULL,
+        Quantity      INT      NOT NULL,
+        IsRestored    BIT      NOT NULL DEFAULT 0,
+        CreatedDate   DATETIME NOT NULL DEFAULT GETDATE(),
+        RestoredDate  DATETIME NULL,
+        CONSTRAINT FK_SSD_Sales        FOREIGN KEY (SaleId)        REFERENCES Sales(SaleId),
+        CONSTRAINT FK_SSD_SaleItems    FOREIGN KEY (SaleItemId)    REFERENCES SaleItems(SaleItemId),
+        CONSTRAINT FK_SSD_Variants     FOREIGN KEY (VariantId)     REFERENCES ProductVariants(VariantId),
+        CONSTRAINT FK_SSD_Marketplace  FOREIGN KEY (MarketplaceId) REFERENCES Marketplaces(MarketplaceId)
+    );
+
+    CREATE INDEX IX_SSD_SaleId    ON SaleStockDeductions(SaleId);
+    CREATE INDEX IX_SSD_VariantId ON SaleStockDeductions(VariantId);
+END
+GO
+
+-- ============================================================
 -- SaleItems.OrderRef  (order reference / order ID per item)
 -- ============================================================
 IF NOT EXISTS (

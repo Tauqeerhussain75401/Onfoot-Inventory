@@ -40,6 +40,7 @@
         .sq-red    { background: #dc2626; }
         .sq-grey   { background: #6b7280; }
         .sq-blue   { background: #2563eb; }
+        .sq-orange { background: #ea580c; }
 
         /* ── Misc ─────────────────────────────────────────────────── */
         #tblStock tbody tr { cursor: default; }
@@ -633,6 +634,9 @@
             head += '<th class="text-center" style="width:100px;">'
                   + '<span style="color:#64748b;font-weight:700;">'
                   + '<i class="fas fa-sigma me-1" style="font-size:.75rem;"></i>MP Total</span></th>'
+                  + '<th class="text-center" style="width:100px;">'
+                  + '<span style="color:#ea580c;font-weight:700;">'
+                  + '<i class="fas fa-shopping-cart me-1" style="font-size:.75rem;"></i>Sale Qty</span></th>'
                   + '<th style="width:120px;">Actions</th></tr>';
             document.getElementById('stockThead').innerHTML = head;
 
@@ -666,9 +670,13 @@
 
                 // Marketplace cells
                 allMarketplaces.forEach(function (m) {
-                    var qty = (item.MarketplaceStocks && item.MarketplaceStocks[m.MarketplaceId]) || 0;
+                    var qty     = (item.MarketplaceStocks    && item.MarketplaceStocks[m.MarketplaceId])    || 0;
+                    var saleQty = (item.MarketplaceSaleQty   && item.MarketplaceSaleQty[m.MarketplaceId])   || 0;
                     rows += '<td class="text-center">'
                           + '<span class="sq-badge ' + (qty > 0 ? 'sq-green' : 'sq-red') + '">' + qty + '</span>'
+                          + (saleQty > 0
+                              ? '<br><span style="font-size:0.68rem;font-weight:700;color:#ea580c;">sold:' + saleQty + '</span>'
+                              : '<br><span style="font-size:0.68rem;color:#cbd5e1;">sold:0</span>')
                           + '</td>';
                 });
 
@@ -676,6 +684,12 @@
                 var alloc = item.TotalAllocated;
                 rows += '<td class="text-center">'
                       + '<span class="sq-badge ' + (alloc > 0 ? 'sq-blue' : 'sq-grey') + '">' + alloc + '</span>'
+                      + '</td>';
+
+                // Sale Qty
+                var saleQty = item.SaleQty || 0;
+                rows += '<td class="text-center">'
+                      + '<span class="sq-badge ' + (saleQty > 0 ? 'sq-orange' : 'sq-grey') + '">' + saleQty + '</span>'
                       + '</td>';
 
                 // Actions
@@ -988,9 +1002,10 @@
             });
             fromSel.value = '';
 
-            // Allocate To: all marketplaces
+            // Allocate To: Warehouse + all marketplaces
             var mpSel = document.getElementById('allocMarketplace');
-            mpSel.innerHTML = '<option value="">-- Select Destination --</option>';
+            mpSel.innerHTML = '<option value="">-- Select Destination --</option>'
+                + '<option value="0">Warehouse (currently ' + item.WarehouseStock + ')</option>';
             allMarketplaces.forEach(function (m) {
                 var cur = (item.MarketplaceStocks && item.MarketplaceStocks[m.MarketplaceId]) || 0;
                 mpSel.innerHTML += '<option value="' + m.MarketplaceId + '">'
@@ -1003,23 +1018,35 @@
         function saveAllocate() {
             var vid    = parseInt(document.getElementById('allocVariantId').value);
             var fromEl = document.getElementById('allocFrom');
+            var mpEl   = document.getElementById('allocMarketplace');
             var fromId = fromEl.value === '' ? null : parseInt(fromEl.value);
-            var toId   = parseInt(document.getElementById('allocMarketplace').value) || 0;
+            var toId   = mpEl.value   === '' ? null : parseInt(mpEl.value);
             var qty    = parseInt($('#allocQty').val()) || 0;
 
-            if (fromId === null)  { showAllocError('Please select a source (Allocate From).'); return; }
-            if (!toId)            { showAllocError('Please select a destination (Allocate To).'); return; }
-            if (fromId === toId)  { showAllocError('Source and destination cannot be the same.'); return; }
-            if (qty < 1)          { showAllocError('Enter a valid quantity.'); return; }
+            if (fromId === null)   { showAllocError('Please select a source (Allocate From).'); return; }
+            if (toId   === null)   { showAllocError('Please select a destination (Allocate To).'); return; }
+            if (fromId === toId)   { showAllocError('Source and destination cannot be the same.'); return; }
+            if (qty < 1)           { showAllocError('Enter a valid quantity.'); return; }
 
             var url, data;
-            if (fromId === 0) {
+            if (fromId === 0 && toId > 0) {
+                // Warehouse → Marketplace
                 url  = 'Stock.aspx/AllocateStock';
                 data = { variantId: vid, marketplaceId: toId, quantity: qty, notes: '' };
+            } else if (fromId > 0 && toId === 0) {
+                // Marketplace → Warehouse (return)
+                url  = 'Stock.aspx/ReturnStock';
+                data = { variantId: vid, marketplaceId: fromId, quantity: qty, notes: 'Returned via allocate' };
             } else {
+                // Marketplace → Marketplace
                 url  = 'Stock.aspx/TransferStock';
                 data = { variantId: vid, fromMarketplaceId: fromId, toMarketplaceId: toId, quantity: qty, notes: '' };
             }
+
+            var fromName = fromId === 0 ? 'Warehouse'
+                : ((allMarketplaces.find(function (m) { return m.MarketplaceId === fromId; }) || {}).MarketplaceName || 'Unknown');
+            var toName = toId === 0 ? 'Warehouse'
+                : ((allMarketplaces.find(function (m) { return m.MarketplaceId === toId; }) || {}).MarketplaceName || 'Unknown');
 
             $.ajax({
                 type: 'POST', url: url,
@@ -1031,6 +1058,16 @@
                         bootstrap.Modal.getInstance(document.getElementById('allocateModal')).hide();
                         showToast(res.message, true);
                         loadPage();
+                        openAllocationPDF([{
+                            productCode: currentVariant.ProductCode,
+                            productName: currentVariant.ProductName,
+                            sku:         currentVariant.SKUNumbers || (currentVariant.Color + ' / Sz ' + currentVariant.Size),
+                            color:       currentVariant.Color,
+                            size:        currentVariant.Size,
+                            fromName:    fromName,
+                            toName:      toName,
+                            qty:         qty
+                        }]);
                     } else {
                         showAllocError(res.message);
                     }
@@ -1438,7 +1475,13 @@
                     $('#allocBulkError').removeClass('d-none');
                     valid = false; return;
                 }
-                toSave.push({ variantId: vid, fromId: fromId, toId: toId, quantity: qty });
+                var vData    = stockData.find(function (x) { return x.VariantId === vid; }) || {};
+                var fromName = fromId === 0 ? 'Warehouse'
+                    : ((allMarketplaces.find(function (m) { return m.MarketplaceId === fromId; }) || {}).MarketplaceName || 'Unknown');
+                var toName = toId === 0 ? 'Warehouse'
+                    : ((allMarketplaces.find(function (m) { return m.MarketplaceId === toId; }) || {}).MarketplaceName || 'Unknown');
+                toSave.push({ variantId: vid, fromId: fromId, toId: toId, quantity: qty,
+                              vData: vData, fromName: fromName, toName: toName });
             });
 
             if (!valid) return;
@@ -1478,6 +1521,21 @@
                                 ? toSave.length + ' variant(s) processed successfully.'
                                 : errors.join(' | '), errors.length === 0);
                             loadPage();
+                            if (errors.length === 0) {
+                                openAllocationPDF(toSave.map(function (it) {
+                                    var v = it.vData || {};
+                                    return {
+                                        productCode: v.ProductCode || '',
+                                        productName: v.ProductName || '',
+                                        sku:         v.SKUNumbers  || ((v.Color || '') + ' / Sz ' + (v.Size || '')),
+                                        color:       v.Color || '',
+                                        size:        v.Size  || '',
+                                        fromName:    it.fromName,
+                                        toName:      it.toName,
+                                        qty:         it.quantity
+                                    };
+                                }));
+                            }
                         }
                     },
                     error: function () {
@@ -1606,6 +1664,78 @@
             document.getElementById('mpActive').checked = true;
             document.getElementById('mpFormTitle').textContent = 'Add New Marketplace';
             $('#mpFormError,#mpFormSuccess').addClass('d-none');
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // ALLOCATION PDF  (open in new tab + auto-print)
+        // ─────────────────────────────────────────────────────────────────────
+        function openAllocationPDF(rows) {
+            var now      = new Date();
+            var dateStr  = now.toLocaleDateString('en-PK',  { year: 'numeric', month: 'long', day: 'numeric' });
+            var timeStr  = now.toLocaleTimeString('en-PK',  { hour: '2-digit', minute: '2-digit' });
+            var totalQty = rows.reduce(function (s, r) { return s + (r.qty || 0); }, 0);
+
+            var bodyRows = rows.map(function (r, i) {
+                return '<tr>'
+                    + '<td>' + (i + 1) + '</td>'
+                    + '<td><strong>' + esc(r.productCode) + '</strong><br><span style="color:#64748b;font-size:11px;">' + esc(r.productName) + '</span></td>'
+                    + '<td><code style="font-size:11px;">' + esc(r.sku) + '</code></td>'
+                    + '<td>' + esc(r.color) + '</td>'
+                    + '<td style="text-align:center;">' + esc(r.size) + '</td>'
+                    + '<td><span class="loc">' + esc(r.fromName) + '</span></td>'
+                    + '<td style="text-align:center;font-size:13px;">&#8594;</td>'
+                    + '<td><span class="loc">' + esc(r.toName) + '</span></td>'
+                    + '<td style="text-align:center;font-weight:700;font-size:14px;color:#16a34a;">' + r.qty + '</td>'
+                    + '</tr>';
+            }).join('');
+
+            var html = '<!DOCTYPE html><html><head><meta charset="utf-8">'
+                + '<title>Stock Allocation - ' + dateStr + '</title>'
+                + '<style>'
+                + '* { box-sizing: border-box; margin: 0; padding: 0; }'
+                + 'body { font-family: Arial, sans-serif; font-size: 13px; color: #1e293b; padding: 28px 32px; }'
+                + 'h2 { font-size: 20px; color: #1d4ed8; margin-bottom: 2px; }'
+                + '.sub { color: #64748b; font-size: 12px; margin-bottom: 22px; }'
+                + 'table { width: 100%; border-collapse: collapse; margin-top: 10px; }'
+                + 'thead th { background: #1e40af; color: #fff; padding: 8px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; text-align: left; }'
+                + 'td { padding: 7px 10px; border-bottom: 1px solid #e2e8f0; font-size: 12px; vertical-align: middle; }'
+                + 'tr:nth-child(even) td { background: #f8fafc; }'
+                + '.loc { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 11px; font-weight: 700; background: #eff6ff; color: #1d4ed8; }'
+                + '.total-row { margin-top: 16px; text-align: right; font-size: 14px; }'
+                + '.print-btn { margin-bottom: 24px; display:flex; gap:10px; }'
+                + '.print-btn button { padding: 10px 28px; background: #1d4ed8; color: #fff; border: none; border-radius: 6px; font-size: 14px; font-weight:600; cursor: pointer; letter-spacing:.3px; }'
+                + '.print-btn button:hover { opacity:.88; }'
+                + '@media print { .print-btn { display: none; } }'
+                + '</style></head><body>'
+                + '<div class="print-btn">'
+                + '<button onclick="window.print()">&#128438;&nbsp; Print</button>'
+                + '&nbsp;<button onclick="window.print()" style="background:#16a34a;">&#11015;&nbsp; Save as PDF</button>'
+                + '</div>'
+                + '<h2>&#128230; Stock Allocation Report</h2>'
+                + '<div class="sub">Generated: ' + dateStr + ' at ' + timeStr + '</div>'
+                + '<table>'
+                + '<thead><tr>'
+                + '<th style="width:32px;">#</th>'
+                + '<th>Product</th>'
+                + '<th>SKU</th>'
+                + '<th style="width:70px;">Color</th>'
+                + '<th style="width:50px;text-align:center;">Size</th>'
+                + '<th style="width:130px;">From</th>'
+                + '<th style="width:24px;"></th>'
+                + '<th style="width:130px;">To</th>'
+                + '<th style="width:56px;text-align:center;">Qty</th>'
+                + '</tr></thead>'
+                + '<tbody>' + bodyRows + '</tbody>'
+                + '</table>'
+                + '<div class="total-row">Total Quantity Allocated: <strong>' + totalQty + '</strong></div>'
+                + '</body></html>';
+
+            var win = window.open('', '_blank');
+            if (win) {
+                win.document.write(html);
+                win.document.close();
+                win.focus();
+            }
         }
 
         function saveMp() {

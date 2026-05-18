@@ -70,10 +70,34 @@ namespace Onfoot_Inventory
         [WebMethod]
         public static string GetAllVariants(string marketplaceName = "")
         {
-            var list = new List<object>();
+            var result = new List<object>();
             using (var conn = GetConnection())
             {
                 conn.Open();
+
+                // Build per-marketplace stock map: variantId -> [{Name, Stock}]
+                var stockMap = new Dictionary<int, List<object>>();
+                const string mktSql = @"
+                    SELECT mi.VariantId, m.MarketplaceName, ISNULL(mi.StockQuantity, 0) AS Stock
+                    FROM   MarketplaceInventory mi
+                    INNER JOIN Marketplaces m ON m.MarketplaceId = mi.MarketplaceId
+                    WHERE  m.IsActive = 1
+                    ORDER  BY m.MarketplaceId";
+                using (var cmd = new SqlCommand(mktSql, conn))
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                    {
+                        int vid = Convert.ToInt32(rdr["VariantId"]);
+                        if (!stockMap.ContainsKey(vid)) stockMap[vid] = new List<object>();
+                        stockMap[vid].Add(new
+                        {
+                            Name  = rdr["MarketplaceName"].ToString(),
+                            Stock = Convert.ToInt32(rdr["Stock"])
+                        });
+                    }
+                }
+
                 const string sql = @"
                     SELECT pv.VariantId, pv.SKUNumbers, pv.Color, pv.Size,
                            ISNULL(mi.StockQuantity, 0) AS MarketplaceStock,
@@ -94,22 +118,24 @@ namespace Onfoot_Inventory
                     {
                         while (rdr.Read())
                         {
-                            list.Add(new
+                            int vid = Convert.ToInt32(rdr["VariantId"]);
+                            result.Add(new
                             {
-                                VariantId   = Convert.ToInt32(rdr["VariantId"]),
-                                SKUNumber   = SafeStr(rdr, "SKUNumbers"),
-                                ProductName = SafeStr(rdr, "ProductName"),
-                                ProductCode = SafeStr(rdr, "ProductCode"),
-                                Color       = SafeStr(rdr, "Color"),
-                                Size        = SafeStr(rdr, "Size"),
-                                SalePrice   = SafeDec(rdr, "SalePrice"),
-                                StockQty    = Convert.ToInt32(rdr["MarketplaceStock"])
+                                VariantId    = vid,
+                                SKUNumber    = SafeStr(rdr, "SKUNumbers"),
+                                ProductName  = SafeStr(rdr, "ProductName"),
+                                ProductCode  = SafeStr(rdr, "ProductCode"),
+                                Color        = SafeStr(rdr, "Color"),
+                                Size         = SafeStr(rdr, "Size"),
+                                SalePrice    = SafeDec(rdr, "SalePrice"),
+                                StockQty     = Convert.ToInt32(rdr["MarketplaceStock"]),
+                                MarketStocks = stockMap.ContainsKey(vid) ? stockMap[vid] : new List<object>()
                             });
                         }
                     }
                 }
             }
-            return JsonConvert.SerializeObject(list);
+            return JsonConvert.SerializeObject(result);
         }
 
         // ============================================================
@@ -449,6 +475,18 @@ namespace Onfoot_Inventory
 
                         if (it.VariantId > 0)
                         {
+                            int saleItemId = 0;
+
+                            // Get the SaleItemId just inserted
+                            using (var cmd = new SqlCommand(
+                                "SELECT TOP 1 SaleItemId FROM SaleItems WHERE SaleId=@S AND VariantId=@V ORDER BY SaleItemId DESC", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@S", saleId);
+                                cmd.Parameters.AddWithValue("@V", it.VariantId);
+                                var r = cmd.ExecuteScalar();
+                                if (r != null) saleItemId = Convert.ToInt32(r);
+                            }
+
                             if (marketplaceId.HasValue)
                             {
                                 // Deduct from marketplace inventory
@@ -476,6 +514,21 @@ namespace Onfoot_Inventory
                                     cmd.Parameters.AddWithValue("@vid", it.VariantId);
                                     cmd.ExecuteNonQuery();
                                 }
+                            }
+
+                            // Record the deduction in SaleStockDeductions
+                            using (var cmd = new SqlCommand(@"
+                                INSERT INTO SaleStockDeductions
+                                    (SaleId, SaleItemId, VariantId, MarketplaceId, Quantity)
+                                VALUES
+                                    (@SaleId, @SaleItemId, @VariantId, @MarketplaceId, @Quantity)", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@SaleId",        saleId);
+                                cmd.Parameters.AddWithValue("@SaleItemId",    saleItemId > 0 ? (object)saleItemId : DBNull.Value);
+                                cmd.Parameters.AddWithValue("@VariantId",     it.VariantId);
+                                cmd.Parameters.AddWithValue("@MarketplaceId", marketplaceId.HasValue ? (object)marketplaceId.Value : DBNull.Value);
+                                cmd.Parameters.AddWithValue("@Quantity",      it.Quantity);
+                                cmd.ExecuteNonQuery();
                             }
                         }
                     }
@@ -610,47 +663,60 @@ namespace Onfoot_Inventory
                 {
                     conn.Open();
 
-                    // Get the platform's marketplace ID
-                    int? marketplaceId = null;
-                    using (var cmd = new SqlCommand(@"
-                        SELECT TOP 1 m.MarketplaceId
-                        FROM   Marketplaces m
-                        INNER JOIN Sales s ON s.Platform = m.MarketplaceName
-                        WHERE  s.SaleId = @Id AND m.IsActive = 1", conn))
+                    // Restore stock using SaleStockDeductions records
+                    var deductions = new List<(int VariantId, int? MarketplaceId, int Quantity, int DeductionId)>();
+                    using (var cmd = new SqlCommand(
+                        "SELECT DeductionId, VariantId, MarketplaceId, Quantity FROM SaleStockDeductions WHERE SaleId = @Id AND IsRestored = 0", conn))
                     {
                         cmd.Parameters.AddWithValue("@Id", saleId);
-                        var r = cmd.ExecuteScalar();
-                        if (r != null) marketplaceId = Convert.ToInt32(r);
-                    }
-
-                    if (marketplaceId.HasValue)
-                    {
-                        // Restore stock to marketplace inventory
-                        using (var cmd = new SqlCommand(@"
-                            UPDATE mi
-                            SET    mi.StockQuantity = mi.StockQuantity + si.Quantity
-                            FROM   MarketplaceInventory mi
-                            INNER JOIN SaleItems si ON si.VariantId = mi.VariantId
-                            WHERE  si.SaleId = @Id
-                              AND  si.VariantId IS NOT NULL
-                              AND  mi.MarketplaceId = @Mid", conn))
+                        using (var rdr = cmd.ExecuteReader())
                         {
-                            cmd.Parameters.AddWithValue("@Id",  saleId);
-                            cmd.Parameters.AddWithValue("@Mid", marketplaceId.Value);
-                            cmd.ExecuteNonQuery();
+                            while (rdr.Read())
+                            {
+                                int?  mid = rdr.IsDBNull(rdr.GetOrdinal("MarketplaceId")) ? (int?)null : Convert.ToInt32(rdr["MarketplaceId"]);
+                                deductions.Add((
+                                    Convert.ToInt32(rdr["VariantId"]),
+                                    mid,
+                                    Convert.ToInt32(rdr["Quantity"]),
+                                    Convert.ToInt32(rdr["DeductionId"])
+                                ));
+                            }
                         }
                     }
-                    else
+
+                    foreach (var d in deductions)
                     {
-                        // Restore stock to warehouse
-                        using (var cmd = new SqlCommand(@"
-                            UPDATE pv
-                            SET    pv.StockQuantity = pv.StockQuantity + si.Quantity
-                            FROM   ProductVariants pv
-                            INNER JOIN SaleItems si ON si.VariantId = pv.VariantId
-                            WHERE  si.SaleId = @Id AND si.VariantId IS NOT NULL", conn))
+                        if (d.MarketplaceId.HasValue)
                         {
-                            cmd.Parameters.AddWithValue("@Id", saleId);
+                            using (var cmd = new SqlCommand(@"
+                                UPDATE MarketplaceInventory
+                                SET    StockQuantity = StockQuantity + @qty
+                                WHERE  VariantId = @vid AND MarketplaceId = @mid", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@qty", d.Quantity);
+                                cmd.Parameters.AddWithValue("@vid", d.VariantId);
+                                cmd.Parameters.AddWithValue("@mid", d.MarketplaceId.Value);
+                                cmd.ExecuteNonQuery();
+                            }
+                        }
+                        else
+                        {
+                            using (var cmd = new SqlCommand(@"
+                                UPDATE ProductVariants
+                                SET    StockQuantity = StockQuantity + @qty
+                                WHERE  VariantId = @vid", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@qty", d.Quantity);
+                                cmd.Parameters.AddWithValue("@vid", d.VariantId);
+                                cmd.ExecuteNonQuery();
+                            }
+                        }
+
+                        // Mark deduction as restored
+                        using (var cmd = new SqlCommand(
+                            "UPDATE SaleStockDeductions SET IsRestored = 1, RestoredDate = GETDATE() WHERE DeductionId = @Id", conn))
+                        {
+                            cmd.Parameters.AddWithValue("@Id", d.DeductionId);
                             cmd.ExecuteNonQuery();
                         }
                     }
@@ -688,13 +754,13 @@ namespace Onfoot_Inventory
                         cmd.Parameters.AddWithValue("@D", DateTime.Parse(saleDate).Date);
                         int count  = Convert.ToInt32(cmd.ExecuteScalar());
                         string seq = (count + 1).ToString("D2");
-                        return JsonConvert.SerializeObject(saleDate + "-" + seq);
+                        return JsonConvert.SerializeObject(saleDate + " - (" + seq + ")");
                     }
                 }
             }
             catch
             {
-                return JsonConvert.SerializeObject(saleDate + "-01");
+                return JsonConvert.SerializeObject(saleDate + " - (01)");
             }
         }
 

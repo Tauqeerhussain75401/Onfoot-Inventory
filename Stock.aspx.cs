@@ -25,17 +25,19 @@ namespace Onfoot_Inventory
 
         public class StockSummaryItem
         {
-            public int                 VariantId         { get; set; }
-            public int                 ProductId         { get; set; }
-            public string              ProductCode       { get; set; }
-            public string              ProductName       { get; set; }
-            public string              Color             { get; set; }
-            public string              Size              { get; set; }
-            public string              SKUNumbers        { get; set; }
-            public int                 WarehouseStock    { get; set; }
-            public int                 MinStockLevel     { get; set; }
-            public int                 TotalAllocated    { get; set; }
-            public Dictionary<int,int> MarketplaceStocks { get; set; }
+            public int                 VariantId            { get; set; }
+            public int                 ProductId            { get; set; }
+            public string              ProductCode          { get; set; }
+            public string              ProductName          { get; set; }
+            public string              Color                { get; set; }
+            public string              Size                 { get; set; }
+            public string              SKUNumbers           { get; set; }
+            public int                 WarehouseStock       { get; set; }
+            public int                 MinStockLevel        { get; set; }
+            public int                 TotalAllocated       { get; set; }
+            public int                 SaleQty              { get; set; }
+            public Dictionary<int,int> MarketplaceStocks    { get; set; }
+            public Dictionary<int,int> MarketplaceSaleQty   { get; set; }
         }
 
         // ============================================================
@@ -310,16 +312,17 @@ namespace Onfoot_Inventory
                     while (rdr.Read())
                     {
                         var item = new StockSummaryItem {
-                            VariantId         = Convert.ToInt32(rdr["VariantId"]),
-                            ProductId         = Convert.ToInt32(rdr["ProductId"]),
-                            ProductCode       = rdr["ProductCode"].ToString(),
-                            ProductName       = rdr["ProductName"].ToString(),
-                            Color             = rdr["Color"].ToString(),
-                            Size              = rdr["Size"].ToString(),
-                            SKUNumbers        = GetPrimarySKU(rdr.IsDBNull(rdr.GetOrdinal("SKUNumbers")) ? "" : rdr["SKUNumbers"].ToString()),
-                            WarehouseStock    = Convert.ToInt32(rdr["WarehouseStock"]),
-                            MinStockLevel     = Convert.ToInt32(rdr["MinStockLevel"]),
-                            MarketplaceStocks = new Dictionary<int, int>()
+                            VariantId           = Convert.ToInt32(rdr["VariantId"]),
+                            ProductId           = Convert.ToInt32(rdr["ProductId"]),
+                            ProductCode         = rdr["ProductCode"].ToString(),
+                            ProductName         = rdr["ProductName"].ToString(),
+                            Color               = rdr["Color"].ToString(),
+                            Size                = rdr["Size"].ToString(),
+                            SKUNumbers          = GetPrimarySKU(rdr.IsDBNull(rdr.GetOrdinal("SKUNumbers")) ? "" : rdr["SKUNumbers"].ToString()),
+                            WarehouseStock      = Convert.ToInt32(rdr["WarehouseStock"]),
+                            MinStockLevel       = Convert.ToInt32(rdr["MinStockLevel"]),
+                            MarketplaceStocks   = new Dictionary<int, int>(),
+                            MarketplaceSaleQty  = new Dictionary<int, int>()
                         };
                         indexMap[item.VariantId] = items.Count;
                         items.Add(item);
@@ -340,6 +343,30 @@ namespace Onfoot_Inventory
                         int qty  = Convert.ToInt32(rdr2["StockQuantity"]);
                         if (indexMap.ContainsKey(vid))
                             items[indexMap[vid]].MarketplaceStocks[mpid] = qty;
+                    }
+                }
+
+                // Fill sale qty per variant per marketplace (completed sales only)
+                using (var cmd3 = new SqlCommand(@"
+                    SELECT si.VariantId, m.MarketplaceId, SUM(si.Quantity) AS SaleQty
+                    FROM   SaleItems si
+                    INNER JOIN Sales s       ON s.SaleId          = si.SaleId
+                    INNER JOIN Marketplaces m ON m.MarketplaceName = s.Platform
+                    WHERE  s.Status = 'Completed' AND si.VariantId IS NOT NULL
+                    GROUP  BY si.VariantId, m.MarketplaceId", conn))
+                using (var rdr3 = cmd3.ExecuteReader())
+                {
+                    while (rdr3.Read())
+                    {
+                        int vid  = Convert.ToInt32(rdr3["VariantId"]);
+                        int mpid = Convert.ToInt32(rdr3["MarketplaceId"]);
+                        int qty  = Convert.ToInt32(rdr3["SaleQty"]);
+                        if (indexMap.ContainsKey(vid))
+                        {
+                            var it = items[indexMap[vid]];
+                            it.MarketplaceSaleQty[mpid] = qty;
+                            it.SaleQty += qty;
+                        }
                     }
                 }
 
