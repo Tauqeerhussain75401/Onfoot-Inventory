@@ -12,8 +12,6 @@
         .platform-badge    { display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.75rem;font-weight:600; }
         .sale-items-table td, .sale-items-table th { padding:5px 8px;vertical-align:middle; }
         .sku-search-row input { border-right:0; }
-        #tblSales tbody tr { cursor:pointer; }
-        #tblSales tbody tr:hover td { background:#f0f4ff !important; }
         .stat-platform { border-top:3px solid; }
         .variant-check-item:hover { background:#f8faff !important; }
         #manualSaleModal { padding: 0 !important; }
@@ -38,6 +36,43 @@
             height: 100%;
             border-radius: 6px;
         }
+
+        /* ── Sales Grid UI ── */
+        #tblSales { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: 100% !important; }
+        #tblSales thead th {
+            background: #f8fafc;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        #tblSales tbody td {
+            padding: 11px 14px;
+            vertical-align: middle;
+            font-size: 0.895rem;
+            border-top: none;
+            border-bottom: 1px solid #e8edf5;
+        }
+        #tblSales tbody tr:nth-child(even) td { background: #f7f9ff; }
+        #tblSales tbody tr:hover td          { background: #eff6ff !important; cursor: pointer; }
+        .sales-date { white-space: nowrap; }
+        .sales-action-wrap { display:flex; gap:4px; justify-content:center; align-items:center; }
+        .btn-grid-view   { display:inline-flex;align-items:center;justify-content:center;
+                           width:30px;height:30px;border-radius:6px;border:none;cursor:pointer;
+                           background:#dbeafe;color:#1d4ed8;font-size:0.82rem;transition:background .15s; }
+        .btn-grid-view:hover   { background:#bfdbfe; }
+        .btn-grid-cust   { display:inline-flex;align-items:center;justify-content:center;
+                           width:30px;height:30px;border-radius:6px;border:none;cursor:pointer;
+                           background:#cffafe;color:#0e7490;font-size:0.82rem;transition:background .15s; }
+        .btn-grid-cust:hover   { background:#a5f3fc; }
+        .btn-grid-cancel { display:inline-flex;align-items:center;justify-content:center;
+                           width:30px;height:30px;border-radius:6px;border:none;cursor:pointer;
+                           background:#fee2e2;color:#dc2626;font-size:0.82rem;transition:background .15s; }
+        .btn-grid-cancel:hover { background:#fecaca; }
     </style>
 </asp:Content>
 
@@ -67,41 +102,35 @@
         </div>
     </div>
 
-    <!-- Stats Row 1 -->
+    <!-- Stats Row — Today's Manual / BOL / Total -->
     <div class="row g-3 mb-3">
-        <div class="col-xl-3 col-sm-6">
-            <div class="stat-card">
-                <div class="stat-icon blue"><i class="fas fa-file-invoice"></i></div>
+        <div class="col-xl-4 col-sm-6">
+            <div class="stat-card" style="border-top:3px solid #16a34a;">
+                <div class="stat-icon green"><i class="fas fa-pencil-alt"></i></div>
                 <div>
-                    <div class="stat-label">Total Bills</div>
+                    <div class="stat-label">Today's Manual Bills</div>
+                    <div class="stat-value" id="statManualBills">—</div>
+                    <div class="text-muted small mt-1" id="statManualRevenue">—</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4 col-sm-6">
+            <div class="stat-card" style="border-top:3px solid #2563eb;">
+                <div class="stat-icon blue"><i class="fas fa-file-pdf"></i></div>
+                <div>
+                    <div class="stat-label">Today's BOL Bills</div>
+                    <div class="stat-value" id="statBOLBills">—</div>
+                    <div class="text-muted small mt-1" id="statBOLRevenue">—</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-4 col-sm-6">
+            <div class="stat-card" style="border-top:3px solid #7c3aed;">
+                <div class="stat-icon purple"><i class="fas fa-calculator"></i></div>
+                <div>
+                    <div class="stat-label">Today's Total Bills</div>
                     <div class="stat-value" id="statTotalBills">—</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-xl-3 col-sm-6">
-            <div class="stat-card">
-                <div class="stat-icon green"><i class="fas fa-coins"></i></div>
-                <div>
-                    <div class="stat-label">Total Revenue</div>
-                    <div class="stat-value" id="statTotalRevenue">—</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-xl-3 col-sm-6">
-            <div class="stat-card">
-                <div class="stat-icon purple"><i class="fas fa-calendar-day"></i></div>
-                <div>
-                    <div class="stat-label">Today's Bills</div>
-                    <div class="stat-value" id="statTodayBills">—</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-xl-3 col-sm-6">
-            <div class="stat-card">
-                <div class="stat-icon yellow"><i class="fas fa-money-bill-wave"></i></div>
-                <div>
-                    <div class="stat-label">Today's Revenue</div>
-                    <div class="stat-value" id="statTodayRevenue">—</div>
+                    <div class="text-muted small mt-1" id="statTotalRevenue">—</div>
                 </div>
             </div>
         </div>
@@ -114,33 +143,20 @@
 
     <!-- Sales Table -->
     <div class="table-card">
-        <div class="table-card-header">
-            <h6><i class="fas fa-list me-2 text-primary"></i>Sales List</h6>
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-                <select id="filterPlatform" class="form-select form-select-sm" style="width:130px" onchange="loadSales()">
-                    <option value="">All Platforms</option>
-                </select>
-                <select id="filterStatus" class="form-select form-select-sm" style="width:130px" onchange="loadSales()">
-                    <option value="">All Status</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Cancelled">Cancelled</option>
-                </select>
-            </div>
-        </div>
-        <div class="table-card-body">
+        <div class="table-card-body p-0">
             <div class="table-responsive">
-                <table id="tblSales" class="table table-hover w-100">
+                <table id="tblSales" class="table mb-0 w-100">
                     <thead>
                         <tr>
-                            <th style="width:40px">#</th>
-                            <th>Bill No</th>
-                            <th style="width:100px">Platform</th>
-                            <th style="width:105px">Date</th>
-                            <th style="width:70px" class="text-center">Items</th>
-                            <th style="width:80px" class="text-center">Total Qty</th>
-                            <th style="width:120px">Amount</th>
-                            <th style="width:90px">Status</th>
-                            <th style="width:90px">Actions</th>
+                            <th style="width:11.1%">#</th>
+                            <th style="width:11.1%">Bill No</th>
+                            <th style="width:11.1%">Platform</th>
+                            <th style="width:11.1%">Date</th>
+                            <th style="width:11.1%">Items</th>
+                            <th style="width:11.1%">Qty</th>
+                            <th style="width:11.1%">Amount</th>
+                            <th style="width:11.1%">Status</th>
+                            <th style="width:11.2%">Actions</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -652,7 +668,6 @@
         $(document).ready(function () {
             initDataTable();
             loadStats();
-            loadPlatformFilter();
             loadSales();
 
             // Set today's date
@@ -670,37 +685,29 @@
 
         function initDataTable() {
             salesTable = $('#tblSales').DataTable({
-                responsive:  true,
-                pageLength:  15,
-                lengthMenu:  [[10,15,25,50],[10,15,25,50]],
-                columnDefs:  [{ orderable: false, targets: [8] }],
-                order:       [[3, 'desc']],
+                responsive:     false,
+                pageLength:     20,
+                lengthMenu:     [[10,20,50,100],[10,20,50,100]],
+                scrollY:        '520px',
+                scrollCollapse: false,
+                columnDefs:  [
+                    { orderable: false, targets: [0, 8] },
+                    { className: 'text-center', targets: [0, 4, 5, 7, 8] }
+                ],
+                order: [[3, 'desc']],
                 language: {
                     search:            '',
-                    searchPlaceholder: 'Search sales...',
-                    emptyTable:        "<div class='text-center py-4 text-muted'><i class='fas fa-inbox fa-2x mb-2 d-block'></i>No sales found</div>"
+                    searchPlaceholder: 'Search...',
+                    emptyTable:        "<div class='text-center py-5 text-muted'><i class='fas fa-inbox fa-2x mb-3 d-block opacity-50'></i><div style='font-size:0.95rem;'>No sales found</div></div>",
+                    lengthMenu:        "Show _MENU_ entries",
+                    info:              "Showing _START_ - _END_ of _TOTAL_ sales",
+                    paginate:          { previous: '<i class="fas fa-chevron-left"></i>', next: '<i class="fas fa-chevron-right"></i>' }
                 },
-                dom: "<'row mb-2'<'col-sm-6'l><'col-sm-6'f>><'row'<'col-sm-12'tr>><'row mt-2'<'col-sm-5'i><'col-sm-7'p>>"
+                dom: "<'row align-items-center px-3 pt-3 pb-2'<'col-sm-4'l><'col-sm-8'f>><'row'<'col-sm-12'tr>><'row align-items-center px-3 pt-2 pb-3'<'col-sm-5 text-muted small'i><'col-sm-7'p>>"
             });
         }
 
         /* ============================================================ LOAD DATA */
-        /* ============================================================ PLATFORM FILTER */
-        function loadPlatformFilter() {
-            $.ajax({
-                type: 'POST', url: 'Sales.aspx/GetMarketplaces',
-                contentType: 'application/json; charset=utf-8', dataType: 'json',
-                success: function (res) {
-                    var markets = JSON.parse(res.d);
-                    var $sel = $('#filterPlatform');
-                    $sel.find('option:not(:first)').remove();
-                    $.each(markets, function (i, m) {
-                        $sel.append('<option value="' + escHtml(m.MarketplaceName) + '">' + escHtml(m.MarketplaceName) + '</option>');
-                    });
-                }
-            });
-        }
-
         // Appearance map for known marketplaces; unknown ones get a purple fallback
         var mktStyles = {
             'website': { border:'#2563eb', bg:'#dbeafe', icon:'fa-globe',        iconColor:'#2563eb' },
@@ -715,15 +722,18 @@
                 contentType:'application/json; charset=utf-8', dataType:'json',
                 success: function(res) {
                     var s = JSON.parse(res.d);
+                    // Today's Manual / BOL / Total cards
+                    $('#statManualBills').text(s.ManualBills);
+                    $('#statManualRevenue').text('Rs. ' + parseFloat(s.ManualRevenue).toLocaleString('en-PK', pkFmt));
+                    $('#statBOLBills').text(s.BOLBills);
+                    $('#statBOLRevenue').text('Rs. ' + parseFloat(s.BOLRevenue).toLocaleString('en-PK', pkFmt));
                     $('#statTotalBills').text(s.TotalBills);
                     $('#statTotalRevenue').text('Rs. ' + parseFloat(s.TotalRevenue).toLocaleString('en-PK', pkFmt));
-                    $('#statTodayBills').text(s.TodayBills);
-                    $('#statTodayRevenue').text('Rs. ' + parseFloat(s.TodayRevenue).toLocaleString('en-PK', pkFmt));
 
                     // Render one card per active marketplace
                     var markets = s.MarketplaceRevenues || [];
                     var n = markets.length;
-                    var colClass = n === 1 ? 'col-md-12' : n === 2 ? 'col-md-6' : n === 4 ? 'col-md-3' : 'col-sm-6 col-md-4';
+                    var colClass = 'col';
                     var html = '';
                     markets.forEach(function (m) {
                         var st = mktStyles[m.Name.toLowerCase()] || mktFallback;
@@ -731,8 +741,9 @@
                               +   '<div class="stat-card stat-platform" style="border-top:3px solid ' + st.border + ';">'
                               +     '<div class="stat-icon" style="background:' + st.bg + ';"><i class="fas ' + st.icon + '" style="color:' + st.iconColor + ';"></i></div>'
                               +     '<div>'
-                              +       '<div class="stat-label">' + escHtml(m.Name) + ' Revenue</div>'
-                              +       '<div class="stat-value">Rs. ' + parseFloat(m.Revenue).toLocaleString('en-PK', pkFmt) + '</div>'
+                              +       '<div class="stat-label">' + escHtml(m.Name) + ' Orders</div>'
+                              +       '<div class="stat-value">' + m.OrderCount + '</div>'
+                              +       '<div class="text-muted small mt-1">Rs. ' + parseFloat(m.Revenue).toLocaleString('en-PK', pkFmt) + '</div>'
                               +     '</div>'
                               +   '</div>'
                               + '</div>';
@@ -743,32 +754,33 @@
         }
 
         function loadSales() {
-            var platform = $('#filterPlatform').val();
-            var status   = $('#filterStatus').val();
             $.ajax({
                 type:'POST', url:'Sales.aspx/GetSales',
                 contentType:'application/json; charset=utf-8', dataType:'json',
-                data: JSON.stringify({ platform: platform, status: status }),
+                data: JSON.stringify({ platform: '', status: '' }),
                 success: function(res) {
                     var rows = JSON.parse(res.d);
                     salesTable.clear();
                     $.each(rows, function(i, s) {
-                        var pBadge   = '<span class="platform-badge platform-' + s.Platform.toLowerCase() + '">' + s.Platform + '</span>';
-                        var stBadge  = s.Status === 'Completed'
+                        var pBadge  = '<span class="platform-badge platform-' + s.Platform.toLowerCase() + '">' + escHtml(s.Platform) + '</span>';
+                        var stBadge = s.Status === 'Completed'
                             ? '<span class="badge-active">Completed</span>'
                             : '<span class="badge-inactive">Cancelled</span>';
-                        var actions  = '<button class="btn-action-edit btn-view me-1" onclick="viewSale(' + s.SaleId + ')" title="View"><i class="fas fa-eye"></i></button>';
+
+                        var actions = '<div class="sales-action-wrap">'
+                            + '<button class="btn-grid-view btn-view" onclick="viewSale(' + s.SaleId + ')" title="View Sale"><i class="fas fa-eye"></i></button>';
                         if (s.HasCustomer)
-                            actions += '<button class="btn btn-sm btn-outline-info py-0 px-1 me-1" onclick="viewCustomer(' + s.SaleId + ')" title="Customer Info"><i class="fas fa-user"></i></button>';
+                            actions += '<button class="btn-grid-cust" onclick="viewCustomer(' + s.SaleId + ')" title="Customer Info"><i class="fas fa-user"></i></button>';
                         if (s.Status === 'Completed')
-                            actions += '<button class="btn-action-delete btn-cancel-sale" onclick="confirmCancelSale(' + s.SaleId + ',\'' + escJs(s.BillNumber) + '\')" title="Cancel Sale"><i class="fas fa-ban"></i></button>';
+                            actions += '<button class="btn-grid-cancel btn-cancel-sale" onclick="confirmCancelSale(' + s.SaleId + ',\'' + escJs(s.BillNumber) + '\')" title="Cancel Sale"><i class="fas fa-ban"></i></button>';
+                        actions += '</div>';
 
                         salesTable.row.add([
                             i + 1,
-                            '<strong>' + escHtml(s.BillNumber) + '</strong>',
+                            escHtml(s.BillNumber),
                             pBadge,
-                            s.SaleDate,
-                            '<span class="badge bg-secondary">' + s.ItemCount + '</span>',
+                            '<span class="sales-date">' + s.SaleDate + '</span>',
+                            s.ItemCount,
                             s.TotalQty,
                             'Rs. ' + parseFloat(s.TotalAmount).toLocaleString('en-PK', pkFmt),
                             stBadge,
@@ -776,6 +788,7 @@
                         ]);
                     });
                     salesTable.draw();
+                    $('#salesCount').text(rows.length);
                 },
                 error: function() { showToast('Failed to load sales.', 'danger'); }
             });
@@ -1127,7 +1140,8 @@
                 Platform:   platform,
                 SaleDate:   saleDate,
                 Status:     'Completed',
-                Notes:      $.trim($('#txtNotes').val())
+                Notes:      $.trim($('#txtNotes').val()),
+                SaleSource: 'BOL'
             };
 
             var itemsPayload = saleItems.map(function(it) {
@@ -1665,7 +1679,8 @@
                 Platform:   platform,
                 SaleDate:   saleDate,
                 Status:     'Completed',
-                Notes:      $.trim($('#txtManualNotes').val())
+                Notes:      $.trim($('#txtManualNotes').val()),
+                SaleSource: 'Manual'
             };
 
             var itemsPayload = manualSaleItems.map(function (it) {

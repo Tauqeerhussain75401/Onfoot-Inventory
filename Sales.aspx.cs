@@ -24,6 +24,7 @@ namespace Onfoot_Inventory
             public string SaleDate        { get; set; }
             public string Status          { get; set; }
             public string Notes           { get; set; }
+            public string SaleSource      { get; set; }   // "Manual" | "BOL"
             // Customer
             public string CustPhone       { get; set; }
             public string CustName        { get; set; }
@@ -175,38 +176,61 @@ namespace Onfoot_Inventory
             {
                 conn.Open();
 
-                // Overall totals
+                // Today-only totals — split by SaleSource (Manual / BOL)
                 const string totalSql = @"
                     SELECT
-                        COUNT(*)                                                                             AS TotalBills,
-                        ISNULL(SUM(TotalAmount), 0)                                                         AS TotalRevenue,
-                        ISNULL(SUM(CASE WHEN CAST(SaleDate AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END), 0) AS TodayBills,
-                        ISNULL(SUM(CASE WHEN CAST(SaleDate AS DATE) = CAST(GETDATE() AS DATE)
-                                        THEN TotalAmount ELSE 0 END), 0)                                    AS TodayRevenue
-                    FROM Sales WHERE Status = 'Completed'";
+                        ISNULL(SUM(CASE WHEN ISNULL(SaleSource,'Manual') = 'Manual' THEN 1           ELSE 0 END), 0) AS ManualBills,
+                        ISNULL(SUM(CASE WHEN ISNULL(SaleSource,'Manual') = 'Manual' THEN TotalAmount ELSE 0 END), 0) AS ManualRevenue,
+                        ISNULL(SUM(CASE WHEN SaleSource = 'BOL'                     THEN 1           ELSE 0 END), 0) AS BOLBills,
+                        ISNULL(SUM(CASE WHEN SaleSource = 'BOL'                     THEN TotalAmount ELSE 0 END), 0) AS BOLRevenue,
+                        COUNT(*)                                                                                       AS TotalBills,
+                        ISNULL(SUM(TotalAmount), 0)                                                                    AS TotalRevenue
+                    FROM Sales
+                    WHERE Status = 'Completed'
+                      AND CAST(SaleDate AS DATE) = CAST(GETDATE() AS DATE)";
 
-                int     totalBills = 0, todayBills = 0;
-                decimal totalRevenue = 0, todayRevenue = 0;
+                int     totalBills = 0, manualBills = 0, bolBills = 0;
+                decimal totalRevenue = 0, manualRevenue = 0, bolRevenue = 0;
 
                 using (var cmd = new SqlCommand(totalSql, conn))
                 using (var rdr = cmd.ExecuteReader())
                 {
                     if (rdr.Read())
                     {
-                        totalBills   = Convert.ToInt32(rdr["TotalBills"]);
-                        totalRevenue = SafeDec(rdr, "TotalRevenue");
-                        todayBills   = Convert.ToInt32(rdr["TodayBills"]);
-                        todayRevenue = SafeDec(rdr, "TodayRevenue");
+                        manualBills   = Convert.ToInt32(rdr["ManualBills"]);
+                        manualRevenue = SafeDec(rdr, "ManualRevenue");
+                        bolBills      = Convert.ToInt32(rdr["BOLBills"]);
+                        bolRevenue    = SafeDec(rdr, "BOLRevenue");
+                        totalBills    = Convert.ToInt32(rdr["TotalBills"]);
+                        totalRevenue  = SafeDec(rdr, "TotalRevenue");
                     }
                 }
 
-                // Per-marketplace revenue — driven by the Marketplaces table (dynamic)
+                // Per-marketplace revenue + order count (today only)
+                // OrderCount = distinct OrderRef values per bill;
+                // if a bill has no OrderRef, it counts as 1 order.
                 const string mktSql = @"
+                    WITH SaleOrderCounts AS (
+                        SELECT
+                            s.SaleId,
+                            s.Platform,
+                            s.TotalAmount,
+                            CASE
+                                WHEN COUNT(DISTINCT NULLIF(LTRIM(RTRIM(si.OrderRef)), '')) > 0
+                                THEN COUNT(DISTINCT NULLIF(LTRIM(RTRIM(si.OrderRef)), ''))
+                                ELSE 1
+                            END AS OrderCount
+                        FROM  Sales s
+                        LEFT JOIN SaleItems si ON si.SaleId = s.SaleId
+                        WHERE s.Status = 'Completed'
+                          AND CAST(s.SaleDate AS DATE) = CAST(GETDATE() AS DATE)
+                        GROUP BY s.SaleId, s.Platform, s.TotalAmount
+                    )
                     SELECT m.MarketplaceName,
-                           ISNULL(SUM(s.TotalAmount), 0) AS Revenue
+                           ISNULL(SUM(soc.TotalAmount), 0) AS Revenue,
+                           ISNULL(SUM(soc.OrderCount),  0) AS OrderCount
                     FROM   Marketplaces m
-                    LEFT JOIN Sales s
-                           ON s.Platform = m.MarketplaceName AND s.Status = 'Completed'
+                    LEFT JOIN SaleOrderCounts soc ON soc.Platform = m.MarketplaceName
                     WHERE  m.IsActive = 1
                     GROUP  BY m.MarketplaceId, m.MarketplaceName
                     ORDER  BY m.MarketplaceId";
@@ -219,18 +243,21 @@ namespace Onfoot_Inventory
                     {
                         marketplaceRevenues.Add(new
                         {
-                            Name    = rdr["MarketplaceName"].ToString(),
-                            Revenue = SafeDec(rdr, "Revenue")
+                            Name       = rdr["MarketplaceName"].ToString(),
+                            Revenue    = SafeDec(rdr, "Revenue"),
+                            OrderCount = Convert.ToInt32(rdr["OrderCount"])
                         });
                     }
                 }
 
                 return JsonConvert.SerializeObject(new
                 {
+                    ManualBills         = manualBills,
+                    ManualRevenue       = manualRevenue,
+                    BOLBills            = bolBills,
+                    BOLRevenue          = bolRevenue,
                     TotalBills          = totalBills,
                     TotalRevenue        = totalRevenue,
-                    TodayBills          = todayBills,
-                    TodayRevenue        = todayRevenue,
                     MarketplaceRevenues = marketplaceRevenues
                 });
             }
@@ -729,9 +756,9 @@ namespace Onfoot_Inventory
 
                     // Insert Sale header
                     const string insertSale = @"
-                        INSERT INTO Sales (BillNumber, Platform, SaleDate, TotalQty, TotalAmount, Status, Notes)
+                        INSERT INTO Sales (BillNumber, Platform, SaleDate, TotalQty, TotalAmount, Status, Notes, SaleSource)
                         OUTPUT INSERTED.SaleId
-                        VALUES (@BillNumber, @Platform, @SaleDate, @TotalQty, @TotalAmount, 'Completed', @Notes)";
+                        VALUES (@BillNumber, @Platform, @SaleDate, @TotalQty, @TotalAmount, 'Completed', @Notes, @SaleSource)";
 
                     using (var cmd = new SqlCommand(insertSale, conn))
                     {
@@ -741,6 +768,7 @@ namespace Onfoot_Inventory
                         cmd.Parameters.AddWithValue("@TotalQty",    totalQty);
                         cmd.Parameters.AddWithValue("@TotalAmount", totalAmount);
                         cmd.Parameters.AddWithValue("@Notes",       (object)(sale.Notes?.Trim()) ?? DBNull.Value);
+                        cmd.Parameters.AddWithValue("@SaleSource",  string.IsNullOrWhiteSpace(sale.SaleSource) ? "Manual" : sale.SaleSource.Trim());
                         saleId = Convert.ToInt32(cmd.ExecuteScalar());
                     }
 
