@@ -174,37 +174,66 @@ namespace Onfoot_Inventory
             using (var conn = GetConnection())
             {
                 conn.Open();
-                const string sql = @"
+
+                // Overall totals
+                const string totalSql = @"
                     SELECT
-                        COUNT(*)                                                                          AS TotalBills,
-                        ISNULL(SUM(TotalAmount), 0)                                                      AS TotalRevenue,
-                        ISNULL(SUM(CASE WHEN CAST(SaleDate AS DATE) = CAST(GETDATE() AS DATE) THEN 1    ELSE 0 END),0) AS TodayBills,
+                        COUNT(*)                                                                             AS TotalBills,
+                        ISNULL(SUM(TotalAmount), 0)                                                         AS TotalRevenue,
+                        ISNULL(SUM(CASE WHEN CAST(SaleDate AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END), 0) AS TodayBills,
                         ISNULL(SUM(CASE WHEN CAST(SaleDate AS DATE) = CAST(GETDATE() AS DATE)
-                                        THEN TotalAmount ELSE 0 END), 0)                                 AS TodayRevenue,
-                        ISNULL(SUM(CASE WHEN Platform = 'Website' THEN TotalAmount ELSE 0 END), 0)       AS WebsiteRevenue,
-                        ISNULL(SUM(CASE WHEN Platform = 'Daraz'   THEN TotalAmount ELSE 0 END), 0)       AS DarazRevenue,
-                        ISNULL(SUM(CASE WHEN Platform = 'Markaz'  THEN TotalAmount ELSE 0 END), 0)       AS MarkazRevenue
+                                        THEN TotalAmount ELSE 0 END), 0)                                    AS TodayRevenue
                     FROM Sales WHERE Status = 'Completed'";
 
-                using (var cmd = new SqlCommand(sql, conn))
+                int     totalBills = 0, todayBills = 0;
+                decimal totalRevenue = 0, todayRevenue = 0;
+
+                using (var cmd = new SqlCommand(totalSql, conn))
                 using (var rdr = cmd.ExecuteReader())
                 {
                     if (rdr.Read())
                     {
-                        return JsonConvert.SerializeObject(new
+                        totalBills   = Convert.ToInt32(rdr["TotalBills"]);
+                        totalRevenue = SafeDec(rdr, "TotalRevenue");
+                        todayBills   = Convert.ToInt32(rdr["TodayBills"]);
+                        todayRevenue = SafeDec(rdr, "TodayRevenue");
+                    }
+                }
+
+                // Per-marketplace revenue — driven by the Marketplaces table (dynamic)
+                const string mktSql = @"
+                    SELECT m.MarketplaceName,
+                           ISNULL(SUM(s.TotalAmount), 0) AS Revenue
+                    FROM   Marketplaces m
+                    LEFT JOIN Sales s
+                           ON s.Platform = m.MarketplaceName AND s.Status = 'Completed'
+                    WHERE  m.IsActive = 1
+                    GROUP  BY m.MarketplaceId, m.MarketplaceName
+                    ORDER  BY m.MarketplaceId";
+
+                var marketplaceRevenues = new List<object>();
+                using (var cmd = new SqlCommand(mktSql, conn))
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                    {
+                        marketplaceRevenues.Add(new
                         {
-                            TotalBills     = Convert.ToInt32(rdr["TotalBills"]),
-                            TotalRevenue   = SafeDec(rdr, "TotalRevenue"),
-                            TodayBills     = Convert.ToInt32(rdr["TodayBills"]),
-                            TodayRevenue   = SafeDec(rdr, "TodayRevenue"),
-                            WebsiteRevenue = SafeDec(rdr, "WebsiteRevenue"),
-                            DarazRevenue   = SafeDec(rdr, "DarazRevenue"),
-                            MarkazRevenue  = SafeDec(rdr, "MarkazRevenue")
+                            Name    = rdr["MarketplaceName"].ToString(),
+                            Revenue = SafeDec(rdr, "Revenue")
                         });
                     }
                 }
+
+                return JsonConvert.SerializeObject(new
+                {
+                    TotalBills          = totalBills,
+                    TotalRevenue        = totalRevenue,
+                    TodayBills          = todayBills,
+                    TodayRevenue        = todayRevenue,
+                    MarketplaceRevenues = marketplaceRevenues
+                });
             }
-            return JsonConvert.SerializeObject(new { TotalBills=0, TotalRevenue=0, TodayBills=0, TodayRevenue=0, WebsiteRevenue=0, DarazRevenue=0, MarkazRevenue=0 });
         }
 
         // ============================================================
@@ -324,6 +353,284 @@ namespace Onfoot_Inventory
                     }
                 }
                 return JsonConvert.SerializeObject(new { Sale = sale, Items = items });
+            }
+        }
+
+        // ============================================================
+        // GET SALE FOR EDIT
+        // ============================================================
+        [WebMethod]
+        public static string GetSaleForEdit(int saleId)
+        {
+            using (var conn = GetConnection())
+            {
+                conn.Open();
+                object sale = null;
+                using (var cmd = new SqlCommand("SELECT * FROM Sales WHERE SaleId = @Id", conn))
+                {
+                    cmd.Parameters.AddWithValue("@Id", saleId);
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        if (rdr.Read())
+                            sale = new
+                            {
+                                SaleId     = Convert.ToInt32(rdr["SaleId"]),
+                                BillNumber = SafeStr(rdr, "BillNumber"),
+                                Platform   = SafeStr(rdr, "Platform"),
+                                SaleDate   = Convert.ToDateTime(rdr["SaleDate"]).ToString("yyyy-MM-dd"),
+                                Notes      = SafeStr(rdr, "Notes")
+                            };
+                    }
+                }
+                if (sale == null) return "null";
+
+                var items = new List<object>();
+                using (var cmd2 = new SqlCommand(
+                    "SELECT * FROM SaleItems WHERE SaleId = @Id ORDER BY SaleItemId", conn))
+                {
+                    cmd2.Parameters.AddWithValue("@Id", saleId);
+                    using (var rdr2 = cmd2.ExecuteReader())
+                    {
+                        while (rdr2.Read())
+                            items.Add(new
+                            {
+                                VariantId   = rdr2.IsDBNull(rdr2.GetOrdinal("VariantId")) ? 0 : Convert.ToInt32(rdr2["VariantId"]),
+                                SKUNumber   = SafeStr(rdr2, "SKUNumber"),
+                                ProductName = SafeStr(rdr2, "ProductName"),
+                                Color       = SafeStr(rdr2, "Color"),
+                                Size        = SafeStr(rdr2, "Size"),
+                                Quantity    = Convert.ToInt32(rdr2["Quantity"]),
+                                SalePrice   = SafeDec(rdr2, "SalePrice"),
+                                OrderRef    = SafeStr(rdr2, "OrderRef")
+                            });
+                    }
+                }
+                return JsonConvert.SerializeObject(new { Sale = sale, Items = items });
+            }
+        }
+
+        // ============================================================
+        // UPDATE SALE  (restore old stock → delete items → re-insert → reapply stock)
+        // ============================================================
+        [WebMethod]
+        public static string UpdateSale(SaleModel sale, string itemsJson)
+        {
+            try
+            {
+                if (sale == null || sale.SaleId <= 0) return Fail("Invalid sale data.");
+                if (string.IsNullOrWhiteSpace(sale.BillNumber)) return Fail("Bill Number is required.");
+                if (string.IsNullOrWhiteSpace(sale.Platform))   return Fail("Platform is required.");
+                if (string.IsNullOrWhiteSpace(sale.SaleDate))   return Fail("Sale Date is required.");
+
+                var newItems = JsonConvert.DeserializeObject<List<SaleItemModel>>(itemsJson ?? "[]")
+                               ?? new List<SaleItemModel>();
+                if (newItems.Count == 0) return Fail("Add at least one item.");
+
+                int     totalQty    = 0;
+                decimal totalAmount = 0;
+                foreach (var it in newItems) { totalQty += it.Quantity; totalAmount += it.Quantity * it.SalePrice; }
+
+                using (var conn = GetConnection())
+                {
+                    conn.Open();
+
+                    // Verify sale exists and is Completed
+                    using (var cmd = new SqlCommand("SELECT Status FROM Sales WHERE SaleId = @Id", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@Id", sale.SaleId);
+                        var r = cmd.ExecuteScalar();
+                        if (r == null) return Fail("Sale not found.");
+                        if (r.ToString() != "Completed") return Fail("Only completed sales can be edited.");
+                    }
+
+                    // Duplicate bill check (exclude this sale)
+                    using (var chk = new SqlCommand(
+                        "SELECT COUNT(1) FROM Sales WHERE BillNumber = @BN AND Platform = @PL AND SaleId <> @Id", conn))
+                    {
+                        chk.Parameters.AddWithValue("@BN", sale.BillNumber.Trim());
+                        chk.Parameters.AddWithValue("@PL", sale.Platform);
+                        chk.Parameters.AddWithValue("@Id", sale.SaleId);
+                        if (Convert.ToInt32(chk.ExecuteScalar()) > 0)
+                            return Fail("Bill Number '" + sale.BillNumber + "' already exists for " + sale.Platform + ".");
+                    }
+
+                    // Step 1: Restore all existing stock deductions
+                    var deductions = new List<(int VariantId, int? MarketplaceId, int Quantity, int DeductionId)>();
+                    using (var cmd = new SqlCommand(
+                        "SELECT DeductionId, VariantId, MarketplaceId, Quantity FROM SaleStockDeductions WHERE SaleId = @Id AND IsRestored = 0", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@Id", sale.SaleId);
+                        using (var rdr = cmd.ExecuteReader())
+                        {
+                            while (rdr.Read())
+                            {
+                                int? mid = rdr.IsDBNull(rdr.GetOrdinal("MarketplaceId")) ? (int?)null : Convert.ToInt32(rdr["MarketplaceId"]);
+                                deductions.Add((Convert.ToInt32(rdr["VariantId"]), mid, Convert.ToInt32(rdr["Quantity"]), Convert.ToInt32(rdr["DeductionId"])));
+                            }
+                        }
+                    }
+
+                    foreach (var d in deductions)
+                    {
+                        if (d.MarketplaceId.HasValue)
+                        {
+                            using (var cmd = new SqlCommand(@"
+                                UPDATE MarketplaceInventory SET StockQuantity = StockQuantity + @qty
+                                WHERE VariantId = @vid AND MarketplaceId = @mid", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@qty", d.Quantity);
+                                cmd.Parameters.AddWithValue("@vid", d.VariantId);
+                                cmd.Parameters.AddWithValue("@mid", d.MarketplaceId.Value);
+                                cmd.ExecuteNonQuery();
+                            }
+                        }
+                        else
+                        {
+                            using (var cmd = new SqlCommand(
+                                "UPDATE ProductVariants SET StockQuantity = StockQuantity + @qty WHERE VariantId = @vid", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@qty", d.Quantity);
+                                cmd.Parameters.AddWithValue("@vid", d.VariantId);
+                                cmd.ExecuteNonQuery();
+                            }
+                        }
+                        // Delete the deduction row — must happen before SaleItems is deleted
+                        // because FK_SSD_SaleItems references SaleItems.SaleItemId
+                        using (var cmd = new SqlCommand(
+                            "DELETE FROM SaleStockDeductions WHERE DeductionId = @Id", conn))
+                        {
+                            cmd.Parameters.AddWithValue("@Id", d.DeductionId);
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+
+                    // Remove any remaining deduction rows (e.g. IsRestored=1 from a previous
+                    // failed edit) so FK_SSD_SaleItems no longer blocks the SaleItems delete.
+                    using (var cmd = new SqlCommand(
+                        "DELETE FROM SaleStockDeductions WHERE SaleId = @Id", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@Id", sale.SaleId);
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // Step 2: Delete existing sale items (all FK references are now gone)
+                    using (var cmd = new SqlCommand("DELETE FROM SaleItems WHERE SaleId = @Id", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@Id", sale.SaleId);
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // Step 3: Update sale header
+                    using (var cmd = new SqlCommand(@"
+                        UPDATE Sales
+                        SET    BillNumber = @BillNumber, Platform = @Platform, SaleDate = @SaleDate,
+                               TotalQty = @TotalQty, TotalAmount = @TotalAmount, Notes = @Notes, UpdatedDate = GETDATE()
+                        WHERE  SaleId = @SaleId", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@BillNumber",  sale.BillNumber.Trim());
+                        cmd.Parameters.AddWithValue("@Platform",    sale.Platform);
+                        cmd.Parameters.AddWithValue("@SaleDate",    DateTime.Parse(sale.SaleDate));
+                        cmd.Parameters.AddWithValue("@TotalQty",    totalQty);
+                        cmd.Parameters.AddWithValue("@TotalAmount", totalAmount);
+                        cmd.Parameters.AddWithValue("@Notes",       (object)(sale.Notes?.Trim()) ?? DBNull.Value);
+                        cmd.Parameters.AddWithValue("@SaleId",      sale.SaleId);
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // Step 4: Resolve new marketplace ID
+                    int? marketplaceId = null;
+                    using (var cmd = new SqlCommand(
+                        "SELECT TOP 1 MarketplaceId FROM Marketplaces WHERE MarketplaceName = @P AND IsActive = 1", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@P", sale.Platform);
+                        var r = cmd.ExecuteScalar();
+                        if (r != null) marketplaceId = Convert.ToInt32(r);
+                    }
+
+                    // Step 5: Insert new items + deduct stock
+                    foreach (var it in newItems)
+                    {
+                        decimal lineTotal = it.Quantity * it.SalePrice;
+
+                        using (var cmd = new SqlCommand(@"
+                            INSERT INTO SaleItems
+                                (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount, OrderRef)
+                            VALUES
+                                (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount, @OrderRef)", conn))
+                        {
+                            cmd.Parameters.AddWithValue("@SaleId",      sale.SaleId);
+                            cmd.Parameters.AddWithValue("@VariantId",   it.VariantId > 0 ? (object)it.VariantId : DBNull.Value);
+                            cmd.Parameters.AddWithValue("@SKUNumber",   it.SKUNumber  ?? "");
+                            cmd.Parameters.AddWithValue("@ProductName", (object)(it.ProductName) ?? DBNull.Value);
+                            cmd.Parameters.AddWithValue("@Color",       (object)(it.Color)       ?? DBNull.Value);
+                            cmd.Parameters.AddWithValue("@Size",        (object)(it.Size)        ?? DBNull.Value);
+                            cmd.Parameters.AddWithValue("@Quantity",    it.Quantity);
+                            cmd.Parameters.AddWithValue("@SalePrice",   it.SalePrice);
+                            cmd.Parameters.AddWithValue("@OrderRef",    (object)(it.OrderRef?.Trim()) ?? DBNull.Value);
+                            cmd.Parameters.AddWithValue("@TotalAmount", lineTotal);
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        if (it.VariantId > 0)
+                        {
+                            int saleItemId = 0;
+                            using (var cmd = new SqlCommand(
+                                "SELECT TOP 1 SaleItemId FROM SaleItems WHERE SaleId=@S AND VariantId=@V ORDER BY SaleItemId DESC", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@S", sale.SaleId);
+                                cmd.Parameters.AddWithValue("@V", it.VariantId);
+                                var r = cmd.ExecuteScalar();
+                                if (r != null) saleItemId = Convert.ToInt32(r);
+                            }
+
+                            if (marketplaceId.HasValue)
+                            {
+                                using (var cmd = new SqlCommand(@"
+                                    UPDATE MarketplaceInventory
+                                    SET    StockQuantity = StockQuantity - @qty
+                                    WHERE  VariantId = @vid AND MarketplaceId = @mid AND StockQuantity >= @qty", conn))
+                                {
+                                    cmd.Parameters.AddWithValue("@qty", it.Quantity);
+                                    cmd.Parameters.AddWithValue("@vid", it.VariantId);
+                                    cmd.Parameters.AddWithValue("@mid", marketplaceId.Value);
+                                    cmd.ExecuteNonQuery();
+                                }
+                            }
+                            else
+                            {
+                                using (var cmd = new SqlCommand(@"
+                                    UPDATE ProductVariants
+                                    SET    StockQuantity = StockQuantity - @qty
+                                    WHERE  VariantId = @vid AND StockQuantity >= @qty", conn))
+                                {
+                                    cmd.Parameters.AddWithValue("@qty", it.Quantity);
+                                    cmd.Parameters.AddWithValue("@vid", it.VariantId);
+                                    cmd.ExecuteNonQuery();
+                                }
+                            }
+
+                            using (var cmd = new SqlCommand(@"
+                                INSERT INTO SaleStockDeductions
+                                    (SaleId, SaleItemId, VariantId, MarketplaceId, Quantity)
+                                VALUES
+                                    (@SaleId, @SaleItemId, @VariantId, @MarketplaceId, @Quantity)", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@SaleId",        sale.SaleId);
+                                cmd.Parameters.AddWithValue("@SaleItemId",    saleItemId > 0 ? (object)saleItemId : DBNull.Value);
+                                cmd.Parameters.AddWithValue("@VariantId",     it.VariantId);
+                                cmd.Parameters.AddWithValue("@MarketplaceId", marketplaceId.HasValue ? (object)marketplaceId.Value : DBNull.Value);
+                                cmd.Parameters.AddWithValue("@Quantity",      it.Quantity);
+                                cmd.ExecuteNonQuery();
+                            }
+                        }
+                    }
+                }
+
+                return JsonConvert.SerializeObject(new { success = true, message = "Sale updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                return Fail("Error: " + ex.Message);
             }
         }
 

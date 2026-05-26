@@ -15,9 +15,6 @@
         #tblSales tbody tr { cursor:pointer; }
         #tblSales tbody tr:hover td { background:#f0f4ff !important; }
         .stat-platform { border-top:3px solid; }
-        .stat-website  { border-color:#2563eb; }
-        .stat-daraz    { border-color:#f97316; }
-        .stat-markaz   { border-color:#16a34a; }
         .variant-check-item:hover { background:#f8faff !important; }
         #manualSaleModal { padding: 0 !important; }
         #manualSaleModal .modal-dialog {
@@ -27,6 +24,17 @@
             height: calc(100% - 5vh);
         }
         #manualSaleModal .modal-content {
+            height: 100%;
+            border-radius: 6px;
+        }
+        #editSaleModal { padding: 0 !important; }
+        #editSaleModal .modal-dialog {
+            max-width: 84%;
+            width: 84%;
+            margin: 2.5vh 8%;
+            height: calc(100% - 5vh);
+        }
+        #editSaleModal .modal-content {
             height: 100%;
             border-radius: 6px;
         }
@@ -99,35 +107,9 @@
         </div>
     </div>
 
-    <!-- Stats Row 2 — Platform breakdown -->
-    <div class="row g-3 mb-4">
-        <div class="col-md-4">
-            <div class="stat-card stat-platform stat-website">
-                <div class="stat-icon" style="background:#dbeafe;"><i class="fas fa-globe" style="color:#2563eb;"></i></div>
-                <div>
-                    <div class="stat-label">Website Revenue</div>
-                    <div class="stat-value" id="statWebsite">—</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="stat-card stat-platform stat-daraz">
-                <div class="stat-icon" style="background:#ffedd5;"><i class="fas fa-shopping-bag" style="color:#f97316;"></i></div>
-                <div>
-                    <div class="stat-label">Daraz Revenue</div>
-                    <div class="stat-value" id="statDaraz">—</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="stat-card stat-platform stat-markaz">
-                <div class="stat-icon" style="background:#dcfce7;"><i class="fas fa-store" style="color:#16a34a;"></i></div>
-                <div>
-                    <div class="stat-label">Markaz Revenue</div>
-                    <div class="stat-value" id="statMarkaz">—</div>
-                </div>
-            </div>
-        </div>
+    <!-- Stats Row 2 — Marketplace breakdown (rendered dynamically) -->
+    <div class="row g-3 mb-4" id="marketplaceStatsRow">
+        <!-- Populated by loadStats() -->
     </div>
 
     <!-- Sales Table -->
@@ -137,9 +119,6 @@
             <div class="d-flex align-items-center gap-2 flex-wrap">
                 <select id="filterPlatform" class="form-select form-select-sm" style="width:130px" onchange="loadSales()">
                     <option value="">All Platforms</option>
-                    <option value="Website">Website</option>
-                    <option value="Daraz">Daraz</option>
-                    <option value="Markaz">Markaz</option>
                 </select>
                 <select id="filterStatus" class="form-select form-select-sm" style="width:130px" onchange="loadSales()">
                     <option value="">All Status</option>
@@ -323,6 +302,9 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" id="btnEditFromView" class="btn btn-warning text-dark" onclick="editFromView()">
+                        <i class="fas fa-edit me-1"></i> Edit Sale
+                    </button>
                     <button type="button" id="btnCancelSale" class="btn btn-danger" onclick="cancelSale()">
                         <i class="fas fa-ban me-1"></i> Cancel Sale
                     </button>
@@ -527,6 +509,127 @@
         </div>
     </div>
 
+    <!-- ========== EDIT SALE MODAL ========== -->
+    <div class="modal fade" id="editSaleModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header" style="background:#f59e0b;">
+                    <h5 class="modal-title text-dark"><i class="fas fa-edit me-2"></i>Edit Sale &mdash; <span id="editSaleTitle"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+
+                    <!-- Sale Header -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Marketplace <span class="text-danger">*</span></label>
+                            <select id="ddlEditMarketplace" class="form-select" onchange="loadEditVariants()">
+                                <option value="">Loading...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Bill Number <span class="text-danger">*</span></label>
+                            <input type="text" id="txtEditBillNo" class="form-control" maxlength="100" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Sale Date <span class="text-danger">*</span></label>
+                            <input type="date" id="txtEditSaleDate" class="form-control" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Notes</label>
+                            <input type="text" id="txtEditNotes" class="form-control" maxlength="500" />
+                        </div>
+                    </div>
+
+                    <hr class="my-2" />
+
+                    <!-- Add Products -->
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-1"><i class="fas fa-plus-circle me-1 text-warning"></i>Add Products</label>
+                        <div class="d-flex gap-2 align-items-start">
+                            <div class="flex-grow-1 position-relative" id="editVariantDropdownWrapper">
+                                <button type="button" id="btnEditVariantDropdown"
+                                        class="form-select text-start text-truncate"
+                                        style="cursor:pointer;"
+                                        onclick="toggleEditVariantDropdown(event)">
+                                    <span id="editVariantDropdownLabel" class="text-muted">Click to select products...</span>
+                                </button>
+                                <div id="editVariantDropdownPanel" class="d-none border rounded shadow-sm bg-white"
+                                     style="position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:1055;display:flex;flex-direction:column;max-height:380px;">
+                                    <div class="p-2 border-bottom bg-light flex-shrink-0">
+                                        <input type="text" id="txtEditVariantFilter" class="form-control form-control-sm"
+                                               placeholder="Search product, SKU, color, size..."
+                                               oninput="filterEditVariantList()"
+                                               onclick="event.stopPropagation()" />
+                                    </div>
+                                    <div id="editVariantCheckboxList" style="overflow-y:auto;flex:1;">
+                                        <div class="text-center text-muted py-3 small">
+                                            <i class="fas fa-spinner fa-spin me-1"></i> Loading products...
+                                        </div>
+                                    </div>
+                                    <div class="px-3 py-2 border-top bg-light flex-shrink-0 d-flex justify-content-between align-items-center">
+                                        <small id="editVariantSelectCount" class="text-muted">0 selected</small>
+                                        <button type="button" class="btn btn-link btn-sm p-0 text-muted" onclick="clearEditVariantSelection()">Clear all</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="btn btn-warning flex-shrink-0 text-dark" type="button" onclick="addSelectedVariantsToEdit()">
+                                <i class="fas fa-plus me-1"></i> Add Selected
+                            </button>
+                        </div>
+                        <div id="editVariantStockError" class="mt-1" style="display:none;"></div>
+                    </div>
+
+                    <!-- Sale Items Heading -->
+                    <div class="d-flex align-items-center gap-2 mb-2 mt-1">
+                        <i class="fas fa-list text-warning"></i>
+                        <span class="fw-semibold" style="font-size:0.95rem;">Sale Items</span>
+                        <span id="editItemCount" class="badge bg-warning text-dark ms-1">0</span>
+                    </div>
+
+                    <!-- Sale Items Table -->
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered sale-items-table mb-1">
+                            <thead class="table-warning">
+                                <tr style="font-size:0.95rem;">
+                                    <th style="width:30px">#</th>
+                                    <th style="width:150px">Order ID</th>
+                                    <th style="width:220px">SKU</th>
+                                    <th style="width:55px">Color</th>
+                                    <th style="width:55px">Size</th>
+                                    <th style="width:55px" class="text-center">Qty</th>
+                                    <th style="width:120px">Sale Price</th>
+                                    <th style="width:100px">Total</th>
+                                    <th style="width:25px"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="editSaleItemsBody">
+                                <tr><td colspan="9" class="text-center py-3"><i class="fas fa-spinner fa-spin text-warning"></i></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Grand Total -->
+                    <div class="text-end">
+                        <span class="text-muted me-2">Total Qty:</span>
+                        <strong id="lblEditTotalQty">0</strong>
+                        <span class="ms-4 text-muted me-2">Grand Total:</span>
+                        <strong class="fs-6" style="color:#d97706;" id="lblEditGrandTotal">Rs. 0.00</strong>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1"></i> Cancel
+                    </button>
+                    <button type="button" id="btnSaveEditSale" class="btn btn-warning text-dark" onclick="saveEditSale()">
+                        <i class="fas fa-save me-1"></i> Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Container -->
     <div class="toast-container-fixed" id="toastContainer"></div>
 
@@ -549,6 +652,7 @@
         $(document).ready(function () {
             initDataTable();
             loadStats();
+            loadPlatformFilter();
             loadSales();
 
             // Set today's date
@@ -581,6 +685,30 @@
         }
 
         /* ============================================================ LOAD DATA */
+        /* ============================================================ PLATFORM FILTER */
+        function loadPlatformFilter() {
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/GetMarketplaces',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                success: function (res) {
+                    var markets = JSON.parse(res.d);
+                    var $sel = $('#filterPlatform');
+                    $sel.find('option:not(:first)').remove();
+                    $.each(markets, function (i, m) {
+                        $sel.append('<option value="' + escHtml(m.MarketplaceName) + '">' + escHtml(m.MarketplaceName) + '</option>');
+                    });
+                }
+            });
+        }
+
+        // Appearance map for known marketplaces; unknown ones get a purple fallback
+        var mktStyles = {
+            'website': { border:'#2563eb', bg:'#dbeafe', icon:'fa-globe',        iconColor:'#2563eb' },
+            'daraz':   { border:'#f97316', bg:'#ffedd5', icon:'fa-shopping-bag', iconColor:'#f97316' },
+            'markaz':  { border:'#16a34a', bg:'#dcfce7', icon:'fa-store',        iconColor:'#16a34a' }
+        };
+        var mktFallback = { border:'#6366f1', bg:'#ede9fe', icon:'fa-tag', iconColor:'#6366f1' };
+
         function loadStats() {
             $.ajax({
                 type:'POST', url:'Sales.aspx/GetSaleStats',
@@ -591,9 +719,25 @@
                     $('#statTotalRevenue').text('Rs. ' + parseFloat(s.TotalRevenue).toLocaleString('en-PK', pkFmt));
                     $('#statTodayBills').text(s.TodayBills);
                     $('#statTodayRevenue').text('Rs. ' + parseFloat(s.TodayRevenue).toLocaleString('en-PK', pkFmt));
-                    $('#statWebsite').text('Rs. ' + parseFloat(s.WebsiteRevenue).toLocaleString('en-PK', pkFmt));
-                    $('#statDaraz').text('Rs. '   + parseFloat(s.DarazRevenue).toLocaleString('en-PK', pkFmt));
-                    $('#statMarkaz').text('Rs. '  + parseFloat(s.MarkazRevenue).toLocaleString('en-PK', pkFmt));
+
+                    // Render one card per active marketplace
+                    var markets = s.MarketplaceRevenues || [];
+                    var n = markets.length;
+                    var colClass = n === 1 ? 'col-md-12' : n === 2 ? 'col-md-6' : n === 4 ? 'col-md-3' : 'col-sm-6 col-md-4';
+                    var html = '';
+                    markets.forEach(function (m) {
+                        var st = mktStyles[m.Name.toLowerCase()] || mktFallback;
+                        html += '<div class="' + colClass + '">'
+                              +   '<div class="stat-card stat-platform" style="border-top:3px solid ' + st.border + ';">'
+                              +     '<div class="stat-icon" style="background:' + st.bg + ';"><i class="fas ' + st.icon + '" style="color:' + st.iconColor + ';"></i></div>'
+                              +     '<div>'
+                              +       '<div class="stat-label">' + escHtml(m.Name) + ' Revenue</div>'
+                              +       '<div class="stat-value">Rs. ' + parseFloat(m.Revenue).toLocaleString('en-PK', pkFmt) + '</div>'
+                              +     '</div>'
+                              +   '</div>'
+                              + '</div>';
+                    });
+                    $('#marketplaceStatsRow').html(html || '');
                 }
             });
         }
@@ -1041,6 +1185,7 @@
 
                     var cancelled = s.Status === 'Cancelled';
                     $('#btnCancelSale').toggle(!cancelled);
+                    $('#btnEditFromView').toggle(!cancelled);
 
                     var infoHtml = '<div class="row g-2 mb-3">'
                         + '<div class="col-auto"><span class="platform-badge ' + pClass + '">' + s.Platform + '</span></div>'
@@ -1555,6 +1700,255 @@
                 },
                 error: function () { showToast('An error occurred.', 'danger'); },
                 complete: function () { $btn.prop('disabled', false).html('<i class="fas fa-save me-1"></i> Save Sale'); }
+            });
+        }
+
+        /* ============================================================ EDIT SALE */
+        var editSaleId           = 0;
+        var editSaleItems        = [];
+        var editAllVariants      = [];
+        var editSelectedVariantIds = {};
+
+        function openEditSale(saleId) {
+            editSaleId = saleId;
+            editSaleItems = [];
+            editSelectedVariantIds = {};
+            updateEditVariantDropdownLabel();
+            $('#editSaleTitle').text('Loading...');
+            $('#editSaleItemsBody').html('<tr><td colspan="9" class="text-center py-3"><i class="fas fa-spinner fa-spin text-warning fa-lg"></i></td></tr>');
+            $('#editVariantStockError').hide().html('');
+            $('#editVariantDropdownPanel').addClass('d-none');
+            $('#txtEditVariantFilter').val('');
+
+            new bootstrap.Modal(document.getElementById('editSaleModal')).show();
+
+            // Load marketplaces, then sale data sequentially
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/GetMarketplaces',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                success: function (res) {
+                    var markets = JSON.parse(res.d);
+                    var $sel = $('#ddlEditMarketplace').empty();
+                    $.each(markets, function (i, m) {
+                        $sel.append('<option value="' + escHtml(m.MarketplaceName) + '">' + escHtml(m.MarketplaceName) + '</option>');
+                    });
+
+                    $.ajax({
+                        type: 'POST', url: 'Sales.aspx/GetSaleForEdit',
+                        contentType: 'application/json; charset=utf-8', dataType: 'json',
+                        data: JSON.stringify({ saleId: saleId }),
+                        success: function (res2) {
+                            var data = JSON.parse(res2.d);
+                            if (!data) { showToast('Sale not found.', 'warning'); return; }
+                            var s = data.Sale;
+                            $('#editSaleTitle').text(escHtml(s.BillNumber));
+                            $('#ddlEditMarketplace').val(s.Platform);
+                            $('#txtEditBillNo').val(s.BillNumber);
+                            $('#txtEditSaleDate').val(s.SaleDate);
+                            $('#txtEditNotes').val(s.Notes || '');
+                            editSaleItems = data.Items.map(function (it) {
+                                return { variantId: it.VariantId, sku: it.SKUNumber, productName: it.ProductName, color: it.Color, size: it.Size, qty: it.Quantity, salePrice: parseFloat(it.SalePrice), orderRef: it.OrderRef || '' };
+                            });
+                            renderEditItems();
+                            loadEditVariants();
+                        },
+                        error: function () { showToast('Failed to load sale data.', 'danger'); }
+                    });
+                },
+                error: function () { showToast('Failed to load marketplaces.', 'danger'); }
+            });
+        }
+
+        function editFromView() {
+            bootstrap.Modal.getInstance(document.getElementById('viewSaleModal')).hide();
+            setTimeout(function () { openEditSale(currentSaleId); }, 300);
+        }
+
+        function loadEditVariants() {
+            var marketplace = $('#ddlEditMarketplace').val() || '';
+            $('#editVariantCheckboxList').html('<div class="text-center text-muted py-3 small"><i class="fas fa-spinner fa-spin me-1"></i> Loading...</div>');
+            editSelectedVariantIds = {};
+            updateEditVariantDropdownLabel();
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/GetAllVariants',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                data: JSON.stringify({ marketplaceName: marketplace }),
+                success: function (res) { editAllVariants = JSON.parse(res.d); renderEditVariantCheckboxes(editAllVariants); },
+                error: function () { $('#editVariantCheckboxList').html('<div class="text-center text-danger py-2 small">Failed to load products.</div>'); }
+            });
+        }
+
+        function renderEditVariantCheckboxes(variants) {
+            if (!variants || variants.length === 0) {
+                $('#editVariantCheckboxList').html('<div class="text-center text-muted py-3 small">No products found.</div>');
+                return;
+            }
+            var marketplace = $('#ddlEditMarketplace').val() || 'Stock';
+            var html = '';
+            variants.forEach(function (v) {
+                var checked    = editSelectedVariantIds[v.VariantId] ? 'checked' : '';
+                var rowBg      = editSelectedVariantIds[v.VariantId] ? 'background:#fffbeb;' : '';
+                var stockColor = v.StockQty <= 0 ? '#dc2626' : v.StockQty < 5 ? '#d97706' : '#16a34a';
+                var sku        = primarySKU(v.SKUNumber);
+                html += '<div class="variant-check-item d-flex align-items-center gap-2 px-3 py-2 border-bottom" style="cursor:pointer;' + rowBg + '" data-vid="' + v.VariantId + '" onclick="toggleEditVariantCheck(' + v.VariantId + ',this)">'
+                      + '<input type="checkbox" class="form-check-input mt-0 flex-shrink-0" style="width:1.1rem;height:1.1rem;" ' + checked + ' onclick="event.stopPropagation();toggleEditVariantCheck(' + v.VariantId + ',this.closest(\'.variant-check-item\'))" />'
+                      + '<div class="flex-grow-1" style="min-width:0;overflow:hidden;">'
+                      +   '<span class="fw-semibold d-block text-truncate" style="font-size:0.92rem;" title="' + escHtml(v.ProductName) + '">' + escHtml(v.ProductName) + (v.ProductCode ? ' <span class="text-muted fw-normal" style="font-size:0.85rem;">(' + escHtml(v.ProductCode) + ')</span>' : '') + '</span>'
+                      +   '<span class="badge bg-secondary me-1" style="font-size:0.75rem;">' + escHtml(v.Color) + '</span>'
+                      +   '<span class="badge bg-light text-dark border me-1" style="font-size:0.75rem;">Sz&nbsp;' + escHtml(v.Size) + '</span>'
+                      +   '<code style="font-size:0.78rem;">' + escHtml(sku) + '</code>'
+                      + '</div>'
+                      + '<div class="flex-shrink-0 text-end" style="min-width:90px;">'
+                      +   '<div style="font-size:0.72rem;color:#6b7280;">' + escHtml(marketplace) + '</div>'
+                      +   '<div style="font-size:0.88rem;font-weight:700;color:' + stockColor + ';">' + v.StockQty + '</div>'
+                      + '</div></div>';
+            });
+            $('#editVariantCheckboxList').html(html);
+        }
+
+        function toggleEditVariantDropdown(e) {
+            if (e) e.stopPropagation();
+            var $p = $('#editVariantDropdownPanel');
+            if ($p.hasClass('d-none')) { $p.removeClass('d-none').css('display', 'flex'); $('#txtEditVariantFilter').focus(); }
+            else { $p.addClass('d-none'); }
+        }
+
+        $(document).on('click.editVariantDropdown', function (e) {
+            if (!$(e.target).closest('#editVariantDropdownWrapper').length)
+                $('#editVariantDropdownPanel').addClass('d-none');
+        });
+
+        function filterEditVariantList() {
+            var q = $.trim($('#txtEditVariantFilter').val()).toLowerCase();
+            if (!q) { renderEditVariantCheckboxes(editAllVariants); return; }
+            renderEditVariantCheckboxes(editAllVariants.filter(function (v) {
+                return (v.ProductName || '').toLowerCase().indexOf(q) >= 0
+                    || (v.SKUNumber   || '').toLowerCase().indexOf(q) >= 0
+                    || (v.Color       || '').toLowerCase().indexOf(q) >= 0
+                    || (v.Size        || '').toLowerCase().indexOf(q) >= 0
+                    || (v.ProductCode || '').toLowerCase().indexOf(q) >= 0;
+            }));
+        }
+
+        function toggleEditVariantCheck(variantId, rowEl) {
+            var v = editAllVariants.find(function (x) { return x.VariantId === variantId; });
+            if (!v) return;
+            var $row = $(rowEl), $chk = $row.find('input[type="checkbox"]');
+            if (editSelectedVariantIds[variantId]) { delete editSelectedVariantIds[variantId]; $chk.prop('checked', false); $row.css('background', ''); }
+            else { editSelectedVariantIds[variantId] = v; $chk.prop('checked', true); $row.css('background', '#fffbeb'); }
+            updateEditVariantDropdownLabel();
+        }
+
+        function updateEditVariantDropdownLabel() {
+            var vals = Object.values(editSelectedVariantIds), count = vals.length;
+            $('#editVariantSelectCount').text(count + ' selected');
+            if (count === 0) { $('#editVariantDropdownLabel').addClass('text-muted').text('Click to select products...'); }
+            else {
+                var preview = vals.slice(0, 2).map(function (v) { return v.ProductName + ' (' + v.Color + ' Sz' + v.Size + ')'; }).join(', ');
+                if (vals.length > 2) preview += ' +' + (vals.length - 2) + ' more';
+                $('#editVariantDropdownLabel').removeClass('text-muted').text(count + ' selected: ' + preview);
+            }
+        }
+
+        function clearEditVariantSelection() { editSelectedVariantIds = {}; updateEditVariantDropdownLabel(); filterEditVariantList(); }
+
+        function addSelectedVariantsToEdit() {
+            var selected = Object.values(editSelectedVariantIds);
+            if (selected.length === 0) { showToast('Select at least one product.', 'warning'); return; }
+            $('#editVariantStockError').hide().html('');
+
+            var added = 0, skipped = 0, noStock = [];
+            selected.forEach(function (v) {
+                if (v.StockQty <= 0) { noStock.push(v); return; }
+                if (editSaleItems.some(function (x) { return x.variantId === v.VariantId; })) { skipped++; return; }
+                editSaleItems.push({ variantId: v.VariantId, sku: v.SKUNumber, productName: v.ProductName, color: v.Color, size: v.Size, qty: 1, salePrice: v.SalePrice, orderRef: '' });
+                added++;
+            });
+
+            if (noStock.length > 0) {
+                var errHtml = '<div class="alert alert-danger py-2 px-3 mb-0" style="font-size:0.85rem;"><i class="fas fa-times-circle me-1"></i><strong>' + noStock.length + ' not added (stock 0):</strong><ul class="mb-0 mt-1 ps-3">';
+                noStock.forEach(function (v) { errHtml += '<li>' + escHtml(v.ProductName) + ' (' + escHtml(v.Color) + ' Sz' + escHtml(v.Size) + ')</li>'; });
+                errHtml += '</ul></div>';
+                $('#editVariantStockError').html(errHtml).show();
+            }
+            if (added > 0) { renderEditItems(); editSelectedVariantIds = {}; updateEditVariantDropdownLabel(); filterEditVariantList(); $('#editVariantDropdownPanel').addClass('d-none'); }
+
+            if (added > 0 && skipped > 0) showToast(added + ' added, ' + skipped + ' already in list.', 'info');
+            else if (added > 0)           showToast(added + ' product(s) added.', 'success');
+            else if (noStock.length === 0) showToast('All selected already in list.', 'warning');
+        }
+
+        function removeEditItem(idx) { editSaleItems.splice(idx, 1); renderEditItems(); }
+        function updateEditItemOrderRef(idx, val) { editSaleItems[idx].orderRef = val; }
+        function updateEditItemQty(idx, val) { editSaleItems[idx].qty = parseInt(val) || 1; $('#editRowTotal_' + idx).text('Rs. ' + (editSaleItems[idx].qty * editSaleItems[idx].salePrice).toLocaleString('en-PK', pkFmt)); recalcEditTotals(); }
+        function updateEditItemPrice(idx, val) { editSaleItems[idx].salePrice = parseFloat(val) || 0; $('#editRowTotal_' + idx).text('Rs. ' + (editSaleItems[idx].qty * editSaleItems[idx].salePrice).toLocaleString('en-PK', pkFmt)); recalcEditTotals(); }
+
+        function renderEditItems() {
+            var $body = $('#editSaleItemsBody');
+            if (editSaleItems.length === 0) {
+                $body.html('<tr><td colspan="9" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i> No items. Add products above.</td></tr>');
+                $('#lblEditTotalQty').text('0'); $('#lblEditGrandTotal').text('Rs. 0.00'); $('#editItemCount').text('0');
+                return;
+            }
+            var html = '';
+            editSaleItems.forEach(function (it, idx) {
+                var lineTotal = (it.qty * it.salePrice).toFixed(2);
+                html += '<tr style="font-size:0.93rem;">'
+                      + '<td class="text-center text-muted">' + (idx + 1) + '</td>'
+                      + '<td><input type="text" class="form-control" style="font-size:0.9rem;" placeholder="Order ID" value="' + escHtml(it.orderRef || '') + '" oninput="updateEditItemOrderRef(' + idx + ',this.value)" /></td>'
+                      + '<td><code style="font-size:0.88rem;">' + escHtml(it.sku) + '</code></td>'
+                      + '<td>' + (it.color ? '<span class="badge bg-secondary" style="font-size:0.8rem;">' + escHtml(it.color) + '</span>' : '—') + '</td>'
+                      + '<td class="text-center">' + escHtml(it.size) + '</td>'
+                      + '<td><input type="number" class="form-control text-center" style="font-size:0.9rem;font-weight:700;color:#d97706;" min="1" value="' + it.qty + '" onchange="updateEditItemQty(' + idx + ',this.value)" /></td>'
+                      + '<td><div class="input-group"><span class="input-group-text" style="font-size:0.88rem;">Rs.</span><input type="number" class="form-control" style="font-size:0.9rem;" min="0" step="0.01" value="' + (it.salePrice || '') + '" placeholder="0" onchange="updateEditItemPrice(' + idx + ',this.value)" /></div></td>'
+                      + '<td class="fw-semibold" id="editRowTotal_' + idx + '" style="font-size:0.93rem;">Rs. ' + parseFloat(lineTotal).toLocaleString('en-PK', pkFmt) + '</td>'
+                      + '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeEditItem(' + idx + ')"><i class="fas fa-times"></i></button></td>'
+                      + '</tr>';
+            });
+            $body.html(html);
+            recalcEditTotals();
+        }
+
+        function recalcEditTotals() {
+            var totalQty = 0, grandTotal = 0;
+            editSaleItems.forEach(function (it) { totalQty += it.qty; grandTotal += it.qty * it.salePrice; });
+            $('#lblEditTotalQty').text(totalQty);
+            $('#lblEditGrandTotal').text('Rs. ' + grandTotal.toLocaleString('en-PK', pkFmt));
+            $('#editItemCount').text(editSaleItems.length);
+        }
+
+        function saveEditSale() {
+            var platform = $('#ddlEditMarketplace').val();
+            var billNo   = $.trim($('#txtEditBillNo').val());
+            var saleDate = $('#txtEditSaleDate').val();
+
+            if (!platform) { shakeField('#ddlEditMarketplace'); showToast('Select a marketplace.', 'warning'); return; }
+            if (!billNo)   { shakeField('#txtEditBillNo');       showToast('Bill Number is required.', 'warning'); return; }
+            if (!saleDate) { shakeField('#txtEditSaleDate');     showToast('Sale Date is required.', 'warning');   return; }
+            if (editSaleItems.length === 0) { showToast('Add at least one item.', 'warning'); return; }
+
+            var sale = { SaleId: editSaleId, BillNumber: billNo, Platform: platform, SaleDate: saleDate, Status: 'Completed', Notes: $.trim($('#txtEditNotes').val()) };
+            var itemsPayload = editSaleItems.map(function (it) {
+                return { VariantId: it.variantId, SKUNumber: it.sku, ProductName: it.productName, Color: it.color, Size: it.size, Quantity: it.qty, SalePrice: it.salePrice, OrderRef: it.orderRef || '' };
+            });
+
+            var $btn = $('#btnSaveEditSale');
+            $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Saving...');
+
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/UpdateSale',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                data: JSON.stringify({ sale: sale, itemsJson: JSON.stringify(itemsPayload) }),
+                success: function (res) {
+                    var r = JSON.parse(res.d);
+                    if (r.success) {
+                        bootstrap.Modal.getInstance(document.getElementById('editSaleModal')).hide();
+                        showToast(r.message, 'success');
+                        loadSales(); loadStats();
+                    } else { showToast(r.message, 'danger'); }
+                },
+                error: function () { showToast('An error occurred.', 'danger'); },
+                complete: function () { $btn.prop('disabled', false).html('<i class="fas fa-save me-1"></i> Save Changes'); }
             });
         }
 
