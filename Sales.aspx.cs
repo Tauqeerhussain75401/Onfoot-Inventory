@@ -170,14 +170,29 @@ namespace Onfoot_Inventory
         // STATS
         // ============================================================
         [WebMethod]
-        public static string GetSaleStats()
+        public static string GetSaleStats(string startDate = "", string endDate = "")
         {
+            bool hasDateFilter = !string.IsNullOrWhiteSpace(startDate) || !string.IsNullOrWhiteSpace(endDate);
+
+            // Build date WHERE fragment — today when no filter, range when filter is set
+            string dateWhere;
+            if (hasDateFilter)
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                if (!string.IsNullOrWhiteSpace(startDate)) parts.Add("CAST(SaleDate AS DATE) >= @StartDate");
+                if (!string.IsNullOrWhiteSpace(endDate))   parts.Add("CAST(SaleDate AS DATE) <= @EndDate");
+                dateWhere = string.Join(" AND ", parts);
+            }
+            else
+            {
+                dateWhere = "CAST(SaleDate AS DATE) = CAST(GETDATE() AS DATE)";
+            }
+
             using (var conn = GetConnection())
             {
                 conn.Open();
 
-                // Today-only totals — split by SaleSource (Manual / BOL)
-                const string totalSql = @"
+                string totalSql = @"
                     SELECT
                         ISNULL(SUM(CASE WHEN ISNULL(SaleSource,'Manual') = 'Manual' THEN 1           ELSE 0 END), 0) AS ManualBills,
                         ISNULL(SUM(CASE WHEN ISNULL(SaleSource,'Manual') = 'Manual' THEN TotalAmount ELSE 0 END), 0) AS ManualRevenue,
@@ -187,29 +202,33 @@ namespace Onfoot_Inventory
                         ISNULL(SUM(TotalAmount), 0)                                                                    AS TotalRevenue
                     FROM Sales
                     WHERE Status = 'Completed'
-                      AND CAST(SaleDate AS DATE) = CAST(GETDATE() AS DATE)";
+                      AND " + dateWhere;
 
                 int     totalBills = 0, manualBills = 0, bolBills = 0;
                 decimal totalRevenue = 0, manualRevenue = 0, bolRevenue = 0;
 
                 using (var cmd = new SqlCommand(totalSql, conn))
-                using (var rdr = cmd.ExecuteReader())
                 {
-                    if (rdr.Read())
+                    if (!string.IsNullOrWhiteSpace(startDate)) cmd.Parameters.AddWithValue("@StartDate", DateTime.Parse(startDate));
+                    if (!string.IsNullOrWhiteSpace(endDate))   cmd.Parameters.AddWithValue("@EndDate",   DateTime.Parse(endDate));
+                    using (var rdr = cmd.ExecuteReader())
                     {
-                        manualBills   = Convert.ToInt32(rdr["ManualBills"]);
-                        manualRevenue = SafeDec(rdr, "ManualRevenue");
-                        bolBills      = Convert.ToInt32(rdr["BOLBills"]);
-                        bolRevenue    = SafeDec(rdr, "BOLRevenue");
-                        totalBills    = Convert.ToInt32(rdr["TotalBills"]);
-                        totalRevenue  = SafeDec(rdr, "TotalRevenue");
+                        if (rdr.Read())
+                        {
+                            manualBills   = Convert.ToInt32(rdr["ManualBills"]);
+                            manualRevenue = SafeDec(rdr, "ManualRevenue");
+                            bolBills      = Convert.ToInt32(rdr["BOLBills"]);
+                            bolRevenue    = SafeDec(rdr, "BOLRevenue");
+                            totalBills    = Convert.ToInt32(rdr["TotalBills"]);
+                            totalRevenue  = SafeDec(rdr, "TotalRevenue");
+                        }
                     }
                 }
 
-                // Per-marketplace revenue + order count (today only)
+                // Per-marketplace revenue + order count
                 // OrderCount = distinct OrderRef values per bill;
                 // if a bill has no OrderRef, it counts as 1 order.
-                const string mktSql = @"
+                string mktSql = @"
                     WITH SaleOrderCounts AS (
                         SELECT
                             s.SaleId,
@@ -223,7 +242,7 @@ namespace Onfoot_Inventory
                         FROM  Sales s
                         LEFT JOIN SaleItems si ON si.SaleId = s.SaleId
                         WHERE s.Status = 'Completed'
-                          AND CAST(s.SaleDate AS DATE) = CAST(GETDATE() AS DATE)
+                          AND " + dateWhere + @"
                         GROUP BY s.SaleId, s.Platform, s.TotalAmount
                     )
                     SELECT m.MarketplaceName,
@@ -237,16 +256,20 @@ namespace Onfoot_Inventory
 
                 var marketplaceRevenues = new List<object>();
                 using (var cmd = new SqlCommand(mktSql, conn))
-                using (var rdr = cmd.ExecuteReader())
                 {
-                    while (rdr.Read())
+                    if (!string.IsNullOrWhiteSpace(startDate)) cmd.Parameters.AddWithValue("@StartDate", DateTime.Parse(startDate));
+                    if (!string.IsNullOrWhiteSpace(endDate))   cmd.Parameters.AddWithValue("@EndDate",   DateTime.Parse(endDate));
+                    using (var rdr = cmd.ExecuteReader())
                     {
-                        marketplaceRevenues.Add(new
+                        while (rdr.Read())
                         {
-                            Name       = rdr["MarketplaceName"].ToString(),
-                            Revenue    = SafeDec(rdr, "Revenue"),
-                            OrderCount = Convert.ToInt32(rdr["OrderCount"])
-                        });
+                            marketplaceRevenues.Add(new
+                            {
+                                Name       = rdr["MarketplaceName"].ToString(),
+                                Revenue    = SafeDec(rdr, "Revenue"),
+                                OrderCount = Convert.ToInt32(rdr["OrderCount"])
+                            });
+                        }
                     }
                 }
 
@@ -258,7 +281,8 @@ namespace Onfoot_Inventory
                     BOLRevenue          = bolRevenue,
                     TotalBills          = totalBills,
                     TotalRevenue        = totalRevenue,
-                    MarketplaceRevenues = marketplaceRevenues
+                    MarketplaceRevenues = marketplaceRevenues,
+                    IsFiltered          = hasDateFilter
                 });
             }
         }
@@ -267,18 +291,25 @@ namespace Onfoot_Inventory
         // GET SALES LIST
         // ============================================================
         [WebMethod]
-        public static string GetSales(string platform = "", string status = "")
+        public static string GetSales(string platform = "", string status = "", string startDate = "", string endDate = "")
         {
             var list = new List<object>();
             using (var conn = GetConnection())
             {
                 conn.Open();
+                bool hasDateFilter = !string.IsNullOrWhiteSpace(startDate) || !string.IsNullOrWhiteSpace(endDate);
+
                 var where = "WHERE 1=1";
-                if (!string.IsNullOrEmpty(platform)) where += " AND s.Platform = @Platform";
-                if (!string.IsNullOrEmpty(status))   where += " AND s.Status = @Status";
+                if (!string.IsNullOrEmpty(platform))           where += " AND s.Platform = @Platform";
+                if (!string.IsNullOrEmpty(status))             where += " AND s.Status = @Status";
+                if (!string.IsNullOrWhiteSpace(startDate))     where += " AND CAST(s.SaleDate AS DATE) >= @StartDate";
+                if (!string.IsNullOrWhiteSpace(endDate))       where += " AND CAST(s.SaleDate AS DATE) <= @EndDate";
+
+                // No date filter → limit to newest 100 rows; date filter → return all matching rows
+                string topClause = hasDateFilter ? "" : "TOP 100 ";
 
                 var sql = @"
-                    SELECT s.SaleId, s.BillNumber, s.Platform, s.SaleDate,
+                    SELECT " + topClause + @"s.SaleId, s.BillNumber, s.Platform, s.SaleDate,
                            s.TotalQty, s.TotalAmount, s.Status, s.Notes, s.CreatedDate,
                            s.CustomerId,
                            CASE WHEN s.CustomerId IS NOT NULL THEN 1 ELSE 0 END AS HasCustomer,
@@ -293,8 +324,10 @@ namespace Onfoot_Inventory
 
                 using (var cmd = new SqlCommand(sql, conn))
                 {
-                    if (!string.IsNullOrEmpty(platform)) cmd.Parameters.AddWithValue("@Platform", platform);
-                    if (!string.IsNullOrEmpty(status))   cmd.Parameters.AddWithValue("@Status",   status);
+                    if (!string.IsNullOrEmpty(platform))           cmd.Parameters.AddWithValue("@Platform",  platform);
+                    if (!string.IsNullOrEmpty(status))             cmd.Parameters.AddWithValue("@Status",    status);
+                    if (!string.IsNullOrWhiteSpace(startDate))     cmd.Parameters.AddWithValue("@StartDate", DateTime.Parse(startDate));
+                    if (!string.IsNullOrWhiteSpace(endDate))       cmd.Parameters.AddWithValue("@EndDate",   DateTime.Parse(endDate));
 
                     using (var rdr = cmd.ExecuteReader())
                     {

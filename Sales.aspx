@@ -90,7 +90,7 @@
             </nav>
         </div>
         <div class="d-flex gap-2">
-            <button class="btn btn-outline-secondary btn-sm" onclick="loadSales()" title="Refresh">
+            <button class="btn btn-outline-secondary btn-sm" onclick="var _fd=getFilterDates();loadSales(_fd.startDate,_fd.endDate);loadStats(_fd.startDate,_fd.endDate);" title="Refresh">
                 <i class="fas fa-sync-alt me-1"></i> Refresh
             </button>
             <button class="btn btn-success" onclick="openManualSaleModal()">
@@ -102,13 +102,36 @@
         </div>
     </div>
 
+    <!-- Date Filter Bar -->
+    <div class="table-card mb-3 px-3 py-2">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 fw-semibold text-nowrap" style="font-size:0.85rem;">
+                    <i class="fas fa-calendar-alt me-1 text-primary"></i>From
+                </label>
+                <input type="date" id="filterStartDate" class="form-control form-control-sm" style="width:155px;" />
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 fw-semibold text-nowrap" style="font-size:0.85rem;">To</label>
+                <input type="date" id="filterEndDate" class="form-control form-control-sm" style="width:155px;" />
+            </div>
+            <button class="btn btn-primary btn-sm px-3" onclick="applyDateFilter()">
+                <i class="fas fa-filter me-1"></i> Apply
+            </button>
+            <button class="btn btn-outline-secondary btn-sm px-3" onclick="clearDateFilter()">
+                <i class="fas fa-times me-1"></i> Clear
+            </button>
+            <span id="filterLabel" class="text-muted small ms-1" style="font-size:0.82rem;"></span>
+        </div>
+    </div>
+
     <!-- Stats Row — Today's Manual / BOL / Total -->
     <div class="row g-3 mb-3">
         <div class="col-xl-4 col-sm-6">
             <div class="stat-card" style="border-top:3px solid #16a34a;">
                 <div class="stat-icon green"><i class="fas fa-pencil-alt"></i></div>
                 <div>
-                    <div class="stat-label">Today's Manual Bills</div>
+                    <div class="stat-label" id="lblManualBillsTitle">Today's Manual Bills</div>
                     <div class="stat-value" id="statManualBills">—</div>
                     <div class="text-muted small mt-1" id="statManualRevenue">—</div>
                 </div>
@@ -118,7 +141,7 @@
             <div class="stat-card" style="border-top:3px solid #2563eb;">
                 <div class="stat-icon blue"><i class="fas fa-file-pdf"></i></div>
                 <div>
-                    <div class="stat-label">Today's BOL Bills</div>
+                    <div class="stat-label" id="lblBOLBillsTitle">Today's BOL Bills</div>
                     <div class="stat-value" id="statBOLBills">—</div>
                     <div class="text-muted small mt-1" id="statBOLRevenue">—</div>
                 </div>
@@ -128,7 +151,7 @@
             <div class="stat-card" style="border-top:3px solid #7c3aed;">
                 <div class="stat-icon purple"><i class="fas fa-calculator"></i></div>
                 <div>
-                    <div class="stat-label">Today's Total Bills</div>
+                    <div class="stat-label" id="lblTotalBillsTitle">Today's Total Bills</div>
                     <div class="stat-value" id="statTotalBills">—</div>
                     <div class="text-muted small mt-1" id="statTotalRevenue">—</div>
                 </div>
@@ -484,7 +507,7 @@
                             <thead class="table-success">
                                 <tr style="font-size:0.95rem;">
                                     <th style="width:30px">#</th>
-                                    <th style="width:150px">Order ID</th>
+                                    <th style="width:150px">Order ID <span class="text-danger">*</span></th>
                                     <th style="width:220px">SKU</th>
                                     <th style="width:55px">Color</th>
                                     <th style="width:55px">Size</th>
@@ -538,10 +561,11 @@
                     <!-- Sale Header -->
                     <div class="row g-3 mb-3">
                         <div class="col-md-3">
-                            <label class="form-label">Marketplace <span class="text-danger">*</span></label>
-                            <select id="ddlEditMarketplace" class="form-select" onchange="loadEditVariants()">
+                            <label class="form-label">Marketplace</label>
+                            <select id="ddlEditMarketplace" class="form-select bg-light" disabled>
                                 <option value="">Loading...</option>
                             </select>
+                            <small class="text-muted" style="font-size:0.75rem;"><i class="fas fa-lock me-1"></i>Cannot be changed after saving</small>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Bill Number <span class="text-danger">*</span></label>
@@ -667,8 +691,8 @@
         /* ============================================================ INIT */
         $(document).ready(function () {
             initDataTable();
-            loadStats();
-            loadSales();
+            loadStats('', '');
+            loadSales('', '');
 
             // Set today's date
             $('#txtSaleDate').val(new Date().toISOString().split('T')[0]);
@@ -716,13 +740,67 @@
         };
         var mktFallback = { border:'#6366f1', bg:'#ede9fe', icon:'fa-tag', iconColor:'#6366f1' };
 
-        function loadStats() {
+        /* ============================================================ DATE FILTER */
+        function getFilterDates() {
+            return {
+                startDate: $('#filterStartDate').val() || '',
+                endDate:   $('#filterEndDate').val()   || ''
+            };
+        }
+
+        function applyDateFilter() {
+            var d = getFilterDates();
+            if (!d.startDate && !d.endDate) {
+                showToast('Select at least a start or end date to filter.', 'warning');
+                return;
+            }
+            if (d.startDate && d.endDate && d.startDate > d.endDate) {
+                showToast('Start date cannot be after end date.', 'warning');
+                return;
+            }
+            loadStats(d.startDate, d.endDate);
+            loadSales(d.startDate, d.endDate);
+        }
+
+        function clearDateFilter() {
+            $('#filterStartDate, #filterEndDate').val('');
+            $('#filterLabel').text('');
+            loadStats('', '');
+            loadSales('', '');
+        }
+
+        function buildFilterLabel(startDate, endDate) {
+            if (!startDate && !endDate) return "Showing today's data in cards · Last 100 records in grid";
+            var fmt = function(d) {
+                if (!d) return '';
+                var parts = d.split('-');
+                var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                return parts[2] + '-' + months[parseInt(parts[1], 10) - 1] + '-' + parts[0];
+            };
+            if (startDate && endDate) return 'Filtered: ' + fmt(startDate) + ' to ' + fmt(endDate);
+            if (startDate)            return 'Filtered from: ' + fmt(startDate);
+            return 'Filtered to: ' + fmt(endDate);
+        }
+
+        function updateCardTitles(startDate, endDate) {
+            var prefix = (startDate || endDate) ? 'Filtered' : "Today's";
+            $('#lblManualBillsTitle').text(prefix + ' Manual Bills');
+            $('#lblBOLBillsTitle').text(prefix + ' BOL Bills');
+            $('#lblTotalBillsTitle').text(prefix + ' Total Bills');
+        }
+
+        function loadStats(startDate, endDate) {
+            startDate = startDate || '';
+            endDate   = endDate   || '';
             $.ajax({
                 type:'POST', url:'Sales.aspx/GetSaleStats',
                 contentType:'application/json; charset=utf-8', dataType:'json',
+                data: JSON.stringify({ startDate: startDate, endDate: endDate }),
                 success: function(res) {
                     var s = JSON.parse(res.d);
-                    // Today's Manual / BOL / Total cards
+                    updateCardTitles(startDate, endDate);
+                    $('#filterLabel').text(buildFilterLabel(startDate, endDate));
+                    // Manual / BOL / Total cards
                     $('#statManualBills').text(s.ManualBills);
                     $('#statManualRevenue').text('Rs. ' + parseFloat(s.ManualRevenue).toLocaleString('en-PK', pkFmt));
                     $('#statBOLBills').text(s.BOLBills);
@@ -753,11 +831,13 @@
             });
         }
 
-        function loadSales() {
+        function loadSales(startDate, endDate) {
+            startDate = startDate || '';
+            endDate   = endDate   || '';
             $.ajax({
                 type:'POST', url:'Sales.aspx/GetSales',
                 contentType:'application/json; charset=utf-8', dataType:'json',
-                data: JSON.stringify({ platform: '', status: '' }),
+                data: JSON.stringify({ platform: '', status: '', startDate: startDate, endDate: endDate }),
                 success: function(res) {
                     var rows = JSON.parse(res.d);
                     salesTable.clear();
@@ -1168,7 +1248,7 @@
                     if (r.success) {
                         bootstrap.Modal.getInstance(document.getElementById('saleModal')).hide();
                         showToast(r.message, 'success');
-                        loadSales(); loadStats();
+                        var _fd = getFilterDates(); loadSales(_fd.startDate, _fd.endDate); loadStats(_fd.startDate, _fd.endDate);
                     } else {
                         showToast(r.message, 'danger');
                     }
@@ -1260,7 +1340,7 @@
                     var r = JSON.parse(res.d);
                     bootstrap.Modal.getInstance(document.getElementById('cancelConfirmModal')).hide();
                     showToast(r.message, r.success ? 'success' : 'danger');
-                    if (r.success) { loadSales(); loadStats(); }
+                    if (r.success) { var _fd = getFilterDates(); loadSales(_fd.startDate, _fd.endDate); loadStats(_fd.startDate, _fd.endDate); }
                 },
                 error: function() { showToast('Cancel failed.', 'danger'); },
                 complete: function() { $btn.prop('disabled', false).html('<i class="fas fa-ban me-1"></i> Yes, Cancel'); }
@@ -1405,9 +1485,14 @@
 
         function loadVariants() {
             var marketplace = $('#ddlManualMarketplace').val() || '';
-            $('#variantCheckboxList').html('<div class="text-center text-muted py-3 small"><i class="fas fa-spinner fa-spin me-1"></i> Loading products...</div>');
+            // Clear grid and selections whenever marketplace changes
+            manualSaleItems = [];
+            renderManualItems();
             selectedVariantIds = {};
             updateVariantDropdownLabel();
+            $('#variantStockError').hide().html('');
+            $('#variantDropdownPanel').addClass('d-none');
+            $('#variantCheckboxList').html('<div class="text-center text-muted py-3 small"><i class="fas fa-spinner fa-spin me-1"></i> Loading products...</div>');
             $.ajax({
                 type: 'POST', url: 'Sales.aspx/GetAllVariants',
                 contentType: 'application/json; charset=utf-8', dataType: 'json',
@@ -1604,7 +1689,10 @@
 
         function removeManualItem(idx) { manualSaleItems.splice(idx, 1); renderManualItems(); }
 
-        function updateManualItemOrderRef(idx, val) { manualSaleItems[idx].orderRef = val; }
+        function updateManualItemOrderRef(idx, val, el) {
+            manualSaleItems[idx].orderRef = val;
+            if (el) el.style.borderColor = $.trim(val) ? '' : '#dc2626';
+        }
 
         function updateManualItemQty(idx, val) {
             manualSaleItems[idx].qty = parseInt(val) || 1;
@@ -1639,9 +1727,10 @@
                 var skuCell     = '<code style="font-size:0.88rem;">' + escHtml(it.sku) + '</code>'
                                 + (stockHtml ? '<br><span style="line-height:1.2;">' + stockHtml + '</span>' : '');
                 var qtyStyle    = 'font-size:0.9rem;font-weight:700;color:#1d4ed8;';
+                var orderBorder = $.trim(it.orderRef || '') ? '' : 'border-color:#dc2626;';
                 html += '<tr style="font-size:0.93rem;">'
                       + '<td class="text-center text-muted">' + (idx + 1) + '</td>'
-                      + '<td><input type="text" class="form-control" style="font-size:0.9rem;" placeholder="Order ID" value="' + escHtml(it.orderRef || '') + '" oninput="updateManualItemOrderRef(' + idx + ',this.value)" /></td>'
+                      + '<td><input type="text" class="form-control" style="font-size:0.9rem;' + orderBorder + '" placeholder="Order ID *" value="' + escHtml(it.orderRef || '') + '" oninput="updateManualItemOrderRef(' + idx + ',this.value,this)" /></td>'
                       + '<td>' + skuCell + '</td>'
                       + '<td>' + (it.color ? '<span class="badge bg-secondary" style="font-size:0.8rem;">' + escHtml(it.color) + '</span>' : '—') + '</td>'
                       + '<td class="text-center">' + escHtml(it.size) + '</td>'
@@ -1672,6 +1761,13 @@
             if (!billNo)   { shakeField('#txtManualBillNo');       showToast('Bill Number is required.', 'warning'); return; }
             if (!saleDate) { shakeField('#txtManualSaleDate');     showToast('Sale Date is required.', 'warning');   return; }
             if (manualSaleItems.length === 0) { showToast('Add at least one item.', 'warning'); return; }
+
+            var missingOrderRef = manualSaleItems.some(function (it) { return !$.trim(it.orderRef); });
+            if (missingOrderRef) {
+                renderManualItems(); // re-render to highlight empty inputs in red
+                showToast('Order ID is required for all items.', 'warning');
+                return;
+            }
 
             var sale = {
                 SaleId:     0,
@@ -1708,7 +1804,7 @@
                     if (r.success) {
                         bootstrap.Modal.getInstance(document.getElementById('manualSaleModal')).hide();
                         showToast(r.message, 'success');
-                        loadSales(); loadStats();
+                        var _fd = getFilterDates(); loadSales(_fd.startDate, _fd.endDate); loadStats(_fd.startDate, _fd.endDate);
                     } else {
                         showToast(r.message, 'danger');
                     }
@@ -1782,13 +1878,21 @@
         function loadEditVariants() {
             var marketplace = $('#ddlEditMarketplace').val() || '';
             $('#editVariantCheckboxList').html('<div class="text-center text-muted py-3 small"><i class="fas fa-spinner fa-spin me-1"></i> Loading...</div>');
-            editSelectedVariantIds = {};
-            updateEditVariantDropdownLabel();
             $.ajax({
                 type: 'POST', url: 'Sales.aspx/GetAllVariants',
                 contentType: 'application/json; charset=utf-8', dataType: 'json',
                 data: JSON.stringify({ marketplaceName: marketplace }),
-                success: function (res) { editAllVariants = JSON.parse(res.d); renderEditVariantCheckboxes(editAllVariants); },
+                success: function (res) {
+                    editAllVariants = JSON.parse(res.d);
+                    // Refresh stock for already-selected variants without wiping selections
+                    editAllVariants.forEach(function (v) {
+                        if (editSelectedVariantIds[v.VariantId]) {
+                            editSelectedVariantIds[v.VariantId] = v;
+                        }
+                    });
+                    updateEditVariantDropdownLabel();
+                    renderEditVariantCheckboxes(editAllVariants);
+                },
                 error: function () { $('#editVariantCheckboxList').html('<div class="text-center text-danger py-2 small">Failed to load products.</div>'); }
             });
         }
@@ -1959,7 +2063,7 @@
                     if (r.success) {
                         bootstrap.Modal.getInstance(document.getElementById('editSaleModal')).hide();
                         showToast(r.message, 'success');
-                        loadSales(); loadStats();
+                        var _fd = getFilterDates(); loadSales(_fd.startDate, _fd.endDate); loadStats(_fd.startDate, _fd.endDate);
                     } else { showToast(r.message, 'danger'); }
                 },
                 error: function () { showToast('An error occurred.', 'danger'); },
