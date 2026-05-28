@@ -11,7 +11,29 @@ namespace Onfoot_Inventory
 {
     public partial class Sales : System.Web.UI.Page
     {
-        protected void Page_Load(object sender, EventArgs e) { }
+        protected void Page_Load(object sender, EventArgs e) { EnsureCourierIdColumn(); }
+
+        private static void EnsureCourierIdColumn()
+        {
+            try
+            {
+                using (var conn = GetConnection())
+                {
+                    conn.Open();
+                    using (var cmd = new SqlCommand(@"
+                        IF NOT EXISTS (
+                            SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = 'Sales' AND COLUMN_NAME = 'CourierId'
+                        )
+                        ALTER TABLE Sales ADD CourierId INT NULL
+                            CONSTRAINT FK_Sales_Couriers FOREIGN KEY (CourierId) REFERENCES Couriers(CourierId)", conn))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch { }
+        }
 
         // ============================================================
         // MODELS
@@ -25,6 +47,7 @@ namespace Onfoot_Inventory
             public string Status          { get; set; }
             public string Notes           { get; set; }
             public string SaleSource      { get; set; }   // "Manual" | "BOL"
+            public int?   CourierId       { get; set; }
             // Customer
             public string CustPhone       { get; set; }
             public string CustName        { get; set; }
@@ -161,6 +184,31 @@ namespace Onfoot_Inventory
                             MarketplaceName = rdr["MarketplaceName"].ToString()
                         });
                     }
+                }
+            }
+            return JsonConvert.SerializeObject(list);
+        }
+
+        // ============================================================
+        // COURIERS  (for manual sale dropdown)
+        // ============================================================
+        [WebMethod]
+        public static string GetCouriers()
+        {
+            var list = new List<object>();
+            using (var conn = GetConnection())
+            {
+                conn.Open();
+                using (var cmd = new SqlCommand(
+                    "SELECT CourierId, CourierName FROM Couriers WHERE IsActive = 1 AND IsDeleted = 0 ORDER BY CourierId ASC", conn))
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                        list.Add(new
+                        {
+                            CourierId   = Convert.ToInt32(rdr["CourierId"]),
+                            CourierName = rdr["CourierName"].ToString()
+                        });
                 }
             }
             return JsonConvert.SerializeObject(list);
@@ -313,13 +361,15 @@ namespace Onfoot_Inventory
                            s.TotalQty, s.TotalAmount, s.Status, s.Notes, s.CreatedDate,
                            s.CustomerId,
                            CASE WHEN s.CustomerId IS NOT NULL THEN 1 ELSE 0 END AS HasCustomer,
-                           COUNT(si.SaleItemId) AS ItemCount
+                           COUNT(si.SaleItemId) AS ItemCount,
+                           c.CourierName
                     FROM Sales s
                     LEFT JOIN SaleItems si ON si.SaleId = s.SaleId
+                    LEFT JOIN Couriers c ON c.CourierId = s.CourierId
                     " + where + @"
                     GROUP BY s.SaleId, s.BillNumber, s.Platform, s.SaleDate,
                              s.TotalQty, s.TotalAmount, s.Status, s.Notes, s.CreatedDate,
-                             s.CustomerId
+                             s.CustomerId, c.CourierName
                     ORDER BY s.CreatedDate DESC";
 
                 using (var cmd = new SqlCommand(sql, conn))
@@ -345,7 +395,8 @@ namespace Onfoot_Inventory
                                 Notes       = SafeStr(rdr, "Notes"),
                                 ItemCount   = Convert.ToInt32(rdr["ItemCount"]),
                                 HasCustomer = Convert.ToInt32(rdr["HasCustomer"]) == 1,
-                                CreatedDate = Convert.ToDateTime(rdr["CreatedDate"]).ToString("dd-MMM-yyyy")
+                                CreatedDate = Convert.ToDateTime(rdr["CreatedDate"]).ToString("dd-MMM-yyyy"),
+                                CourierName = SafeStr(rdr, "CourierName")
                             });
                         }
                     }
@@ -365,7 +416,11 @@ namespace Onfoot_Inventory
                 conn.Open();
                 object sale = null;
 
-                using (var cmd = new SqlCommand("SELECT * FROM Sales WHERE SaleId = @Id", conn))
+                using (var cmd = new SqlCommand(@"
+                    SELECT s.*, c.CourierName
+                    FROM   Sales s
+                    LEFT JOIN Couriers c ON c.CourierId = s.CourierId
+                    WHERE  s.SaleId = @Id", conn))
                 {
                     cmd.Parameters.AddWithValue("@Id", saleId);
                     using (var rdr = cmd.ExecuteReader())
@@ -381,7 +436,8 @@ namespace Onfoot_Inventory
                                 TotalQty    = Convert.ToInt32(rdr["TotalQty"]),
                                 TotalAmount = SafeDec(rdr, "TotalAmount"),
                                 Status      = SafeStr(rdr, "Status"),
-                                Notes       = SafeStr(rdr, "Notes")
+                                Notes       = SafeStr(rdr, "Notes"),
+                                CourierName = SafeStr(rdr, "CourierName")
                             };
                         }
                     }
@@ -401,6 +457,7 @@ namespace Onfoot_Inventory
                             {
                                 SaleItemId  = Convert.ToInt32(rdr2["SaleItemId"]),
                                 VariantId   = rdr2.IsDBNull(rdr2.GetOrdinal("VariantId")) ? 0 : Convert.ToInt32(rdr2["VariantId"]),
+                                OrderRef    = SafeStr(rdr2, "OrderRef"),
                                 SKUNumber   = SafeStr(rdr2, "SKUNumber"),
                                 ProductName = SafeStr(rdr2, "ProductName"),
                                 Color       = SafeStr(rdr2, "Color"),
@@ -789,9 +846,9 @@ namespace Onfoot_Inventory
 
                     // Insert Sale header
                     const string insertSale = @"
-                        INSERT INTO Sales (BillNumber, Platform, SaleDate, TotalQty, TotalAmount, Status, Notes, SaleSource)
+                        INSERT INTO Sales (BillNumber, Platform, SaleDate, TotalQty, TotalAmount, Status, Notes, SaleSource, CourierId)
                         OUTPUT INSERTED.SaleId
-                        VALUES (@BillNumber, @Platform, @SaleDate, @TotalQty, @TotalAmount, 'Completed', @Notes, @SaleSource)";
+                        VALUES (@BillNumber, @Platform, @SaleDate, @TotalQty, @TotalAmount, 'Completed', @Notes, @SaleSource, @CourierId)";
 
                     using (var cmd = new SqlCommand(insertSale, conn))
                     {
@@ -802,6 +859,7 @@ namespace Onfoot_Inventory
                         cmd.Parameters.AddWithValue("@TotalAmount", totalAmount);
                         cmd.Parameters.AddWithValue("@Notes",       (object)(sale.Notes?.Trim()) ?? DBNull.Value);
                         cmd.Parameters.AddWithValue("@SaleSource",  string.IsNullOrWhiteSpace(sale.SaleSource) ? "Manual" : sale.SaleSource.Trim());
+                        cmd.Parameters.AddWithValue("@CourierId",   sale.CourierId.HasValue ? (object)sale.CourierId.Value : DBNull.Value);
                         saleId = Convert.ToInt32(cmd.ExecuteScalar());
                     }
 

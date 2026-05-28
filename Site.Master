@@ -55,12 +55,6 @@
                         <span>Products</span>
                     </a>
                 </li>
-                <li>
-                    <a href="<%: ResolveUrl("~/Categories.aspx") %>" data-page="categories">
-                        <i class="fas fa-tags nav-icon"></i>
-                        <span>Categories</span>
-                    </a>
-                </li>
             </ul>
 
             <!-- Inventory -->
@@ -95,6 +89,17 @@
                         <i class="fas fa-chart-bar nav-icon"></i>
                         <span>Reports</span>
                         <span class="nav-badge">Soon</span>
+                    </a>
+                </li>
+            </ul>
+
+            <!-- Configuration -->
+            <div class="sidebar-section">Configuration</div>
+            <ul class="sidebar-nav">
+                <li>
+                    <a href="<%: ResolveUrl("~/Setup.aspx") %>" data-page="setup">
+                        <i class="fas fa-sliders-h nav-icon"></i>
+                        <span>Setup</span>
                     </a>
                 </li>
             </ul>

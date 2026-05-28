@@ -36,6 +36,17 @@
             height: 100%;
             border-radius: 6px;
         }
+        #saleModal { padding: 0 !important; }
+        #saleModal .modal-dialog {
+            max-width: 84%;
+            width: 84%;
+            margin: 2.5vh 8%;
+            height: calc(100% - 5vh);
+        }
+        #saleModal .modal-content {
+            height: 100%;
+            border-radius: 6px;
+        }
 
         /* ── Sales Grid UI ── */
         #tblSales { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: 100% !important; }
@@ -171,15 +182,16 @@
                 <table id="tblSales" class="table mb-0 w-100">
                     <thead>
                         <tr>
-                            <th style="width:11.1%">#</th>
-                            <th style="width:11.1%">Bill No</th>
-                            <th style="width:11.1%">Platform</th>
-                            <th style="width:11.1%">Date</th>
-                            <th style="width:11.1%">Items</th>
-                            <th style="width:11.1%">Qty</th>
-                            <th style="width:11.1%">Amount</th>
-                            <th style="width:11.1%">Status</th>
-                            <th style="width:11.2%">Actions</th>
+                            <th style="width:5%">#</th>
+                            <th style="width:12%">Bill No</th>
+                            <th style="width:9%">Platform</th>
+                            <th style="width:11%">Courier</th>
+                            <th style="width:9%">Date</th>
+                            <th style="width:8%">Items</th>
+                            <th style="width:6%">Qty</th>
+                            <th style="width:11%">Amount</th>
+                            <th style="width:9%">Status</th>
+                            <th style="width:10%">Actions</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -197,7 +209,7 @@
 
     <!-- ========== ADD SALE MODAL ========== -->
     <div class="modal fade" id="saleModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-dialog modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="fas fa-receipt me-2"></i>New Sale</h5>
@@ -208,27 +220,10 @@
                     <!-- Sale Header -->
                     <div class="row g-3 mb-3">
                         <div class="col-md-3">
-                            <label class="form-label">Platform <span class="text-danger">*</span></label>
-                            <div class="d-flex gap-2 flex-wrap mt-1">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="platform" id="rbWebsite" value="Website" checked />
-                                    <label class="form-check-label" for="rbWebsite">
-                                        <span class="platform-badge platform-website">Website</span>
-                                    </label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="platform" id="rbDaraz" value="Daraz" />
-                                    <label class="form-check-label" for="rbDaraz">
-                                        <span class="platform-badge platform-daraz">Daraz</span>
-                                    </label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="platform" id="rbMarkaz" value="Markaz" />
-                                    <label class="form-check-label" for="rbMarkaz">
-                                        <span class="platform-badge platform-markaz">Markaz</span>
-                                    </label>
-                                </div>
-                            </div>
+                            <label class="form-label">Marketplace <span class="text-danger">*</span></label>
+                            <select id="ddlBOLMarketplace" class="form-select">
+                                <option value="">Loading...</option>
+                            </select>
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Bill Number <span class="text-danger">*</span></label>
@@ -251,8 +246,8 @@
                         <div class="d-flex align-items-center gap-3">
                             <i class="fas fa-file-pdf text-danger fa-lg"></i>
                             <div class="flex-grow-1">
-                                <div class="fw-semibold" style="font-size:0.85rem;">Bill of Lading Upload (PostEx)</div>
-                                <div class="text-muted" style="font-size:0.75rem;">Upload BOL PDF — extracts all products automatically from every page</div>
+                                <div class="fw-semibold" style="font-size:0.85rem;">Bill of Lading Upload</div>
+                                <div class="text-muted" style="font-size:0.75rem;">Upload BOL PDF &mdash; extracts all products automatically from every page</div>
                             </div>
                             <input type="file" id="bolFileInput" accept=".pdf" class="d-none" />
                             <button type="button" class="btn btn-outline-danger btn-sm" onclick="$('#bolFileInput').click()">
@@ -442,16 +437,17 @@
                             </select>
                         </div>
                         <div class="col-md-3">
+                            <label class="form-label">Courier</label>
+                            <select id="ddlManualCourier" class="form-select">
+                            </select>
+                        </div>
+                        <div class="col-md-3">
                             <label class="form-label">Bill Number <span class="text-danger">*</span></label>
                             <input type="text" id="txtManualBillNo" class="form-control" placeholder="Auto-filled or enter manually" maxlength="100" />
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Sale Date <span class="text-danger">*</span></label>
                             <input type="date" id="txtManualSaleDate" class="form-control" onchange="autoFillManualBillNo()" />
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Notes</label>
-                            <input type="text" id="txtManualNotes" class="form-control" placeholder="Optional notes" maxlength="500" />
                         </div>
                     </div>
 
@@ -682,8 +678,9 @@
     <script>
         var salesTable;
         var saleItems       = [];  // [{variantId, sku, productName, color, size, qty, salePrice}]
-        var currentSaleId   = 0;
-        var cancelSaleId    = 0;
+        var currentSaleId     = 0;
+        var currentBillNumber = '';
+        var cancelSaleId      = 0;
         var bolCustomers    = [];   // customers extracted from uploaded BOL
 
         var pkFmt = { minimumFractionDigits: 2 };
@@ -715,10 +712,10 @@
                 scrollY:        '520px',
                 scrollCollapse: false,
                 columnDefs:  [
-                    { orderable: false, targets: [0, 8] },
-                    { className: 'text-center', targets: [0, 4, 5, 7, 8] }
+                    { orderable: false, targets: [0, 9] },
+                    { className: 'text-center', targets: [0, 5, 6, 8, 9] }
                 ],
-                order: [[3, 'desc']],
+                order: [[4, 'desc']],
                 language: {
                     search:            '',
                     searchPlaceholder: 'Search...',
@@ -770,7 +767,7 @@
         }
 
         function buildFilterLabel(startDate, endDate) {
-            if (!startDate && !endDate) return "Showing today's data in cards · Last 100 records in grid";
+            if (!startDate && !endDate) return "Showing today's data in cards. Last 100 records in grid";
             var fmt = function(d) {
                 if (!d) return '';
                 var parts = d.split('-');
@@ -859,6 +856,7 @@
                             i + 1,
                             escHtml(s.BillNumber),
                             pBadge,
+                            s.CourierName ? escHtml(s.CourierName) : '<span class="text-muted">—</span>',
                             '<span class="sales-date">' + s.SaleDate + '</span>',
                             s.ItemCount,
                             s.TotalQty,
@@ -875,17 +873,38 @@
         }
 
         /* ============================================================ ADD SALE MODAL */
+        function loadBOLMarketplaces() {
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/GetMarketplaces',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                success: function (res) {
+                    var markets = JSON.parse(res.d);
+                    var $sel = $('#ddlBOLMarketplace').empty();
+                    if (!markets || markets.length === 0) {
+                        $sel.append('<option value="">No marketplaces found</option>');
+                    } else {
+                        $.each(markets, function (i, m) {
+                            $sel.append('<option value="' + escHtml(m.MarketplaceName) + '">' + escHtml(m.MarketplaceName) + '</option>');
+                        });
+                    }
+                },
+                error: function () {
+                    $('#ddlBOLMarketplace').html('<option value="">Failed to load</option>');
+                }
+            });
+        }
+
         function openAddSaleModal() {
             saleItems = [];
             renderSaleItems();
             $('#txtBillNumber, #txtNotes').val('');
             bolCustomers = [];
             $('#txtSaleDate').val(new Date().toISOString().split('T')[0]);
-            $('#rbWebsite').prop('checked', true);
             $('#txtSearchSKU').val('');
             $('#skuSearchResult').html('');
             $('#bolStatus').html('');
             $('#bolFileInput').val('');
+            loadBOLMarketplaces();
             new bootstrap.Modal(document.getElementById('saleModal')).show();
             setTimeout(function() { $('#txtBillNumber').focus(); }, 400);
         }
@@ -1132,7 +1151,7 @@
 
                         // Auto-set platform from detected BOL type
                         if (result.platform) {
-                            $('input[name="platform"][value="' + result.platform + '"]').prop('checked', true);
+                            $('#ddlBOLMarketplace').val(result.platform);
                         }
 
                         if (!items || items.length === 0) {
@@ -1207,9 +1226,10 @@
         /* ============================================================ SAVE SALE */
         function saveSale() {
             var billNo   = $.trim($('#txtBillNumber').val());
-            var platform = $('input[name="platform"]:checked').val();
+            var platform = $('#ddlBOLMarketplace').val();
             var saleDate = $('#txtSaleDate').val();
 
+            if (!platform) { shakeField('#ddlBOLMarketplace'); showToast('Select a marketplace.', 'warning'); return; }
             if (!billNo)   { shakeField('#txtBillNumber'); showToast('Bill Number is required.', 'warning'); return; }
             if (!saleDate) { shakeField('#txtSaleDate');   showToast('Sale Date is required.', 'warning');   return; }
             if (saleItems.length === 0) { showToast('Add at least one item.', 'warning'); return; }
@@ -1275,6 +1295,7 @@
                     var s = data.Sale, items = data.Items;
 
                     var pClass = 'platform-' + s.Platform.toLowerCase();
+                    currentBillNumber = s.BillNumber;
                     $('#viewSaleTitle').text('Bill: ' + s.BillNumber);
 
                     var cancelled = s.Status === 'Cancelled';
@@ -1283,6 +1304,7 @@
 
                     var infoHtml = '<div class="row g-2 mb-3">'
                         + '<div class="col-auto"><span class="platform-badge ' + pClass + '">' + s.Platform + '</span></div>'
+                        + (s.CourierName ? '<div class="col-auto"><span class="badge bg-secondary"><i class="fas fa-truck me-1"></i>' + escHtml(s.CourierName) + '</span></div>' : '')
                         + '<div class="col-auto text-muted small pt-1"><i class="fas fa-calendar me-1"></i>' + s.SaleDate + '</div>'
                         + '<div class="col-auto ms-auto">'
                         + (cancelled ? '<span class="badge bg-danger">Cancelled</span>' : '<span class="badge bg-success">Completed</span>')
@@ -1290,10 +1312,11 @@
                     if (s.Notes) infoHtml += '<p class="text-muted small mb-2"><i class="fas fa-sticky-note me-1"></i>' + escHtml(s.Notes) + '</p>';
 
                     var tableHtml = '<div class="table-responsive"><table class="table table-sm table-bordered mb-2">'
-                        + '<thead class="table-light"><tr><th>#</th><th>SKU</th><th>Product</th><th>Color</th><th>Size</th><th class="text-center">Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>';
+                        + '<thead class="table-light"><tr><th>#</th><th>Order ID</th><th>SKU</th><th>Product</th><th>Color</th><th>Size</th><th class="text-center">Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>';
                     $.each(items, function(i, it) {
                         tableHtml += '<tr>'
                             + '<td>' + (i+1) + '</td>'
+                            + '<td style="white-space:nowrap;">' + (it.OrderRef ? '<span class="badge bg-light text-dark border" style="font-size:0.75rem;">' + escHtml(it.OrderRef) + '</span>' : '<span class="text-muted">—</span>') + '</td>'
                             + '<td><code style="font-size:0.75rem;">' + escHtml(it.SKUNumber) + '</code></td>'
                             + '<td>' + escHtml(it.ProductName) + '</td>'
                             + '<td><span class="badge bg-secondary">' + escHtml(it.Color) + '</span></td>'
@@ -1317,8 +1340,8 @@
         function cancelSale() {
             bootstrap.Modal.getInstance(document.getElementById('viewSaleModal')).hide();
             setTimeout(function() {
-                $('#cancelBillName').text('#' + currentSaleId);
                 cancelSaleId = currentSaleId;
+                $('#cancelBillName').text('"' + currentBillNumber + '"');
                 new bootstrap.Modal(document.getElementById('cancelConfirmModal')).show();
             }, 300);
         }
@@ -1446,15 +1469,33 @@
             });
         }
 
+        function loadManualCouriers() {
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/GetCouriers',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                success: function (res) {
+                    var couriers = JSON.parse(res.d);
+                    var $sel = $('#ddlManualCourier').empty();
+                    $.each(couriers, function (i, c) {
+                        $sel.append('<option value="' + c.CourierId + '">' + escHtml(c.CourierName) + '</option>');
+                    });
+                },
+                error: function () {
+                    $('#ddlManualCourier').html('<option value="">Failed to load</option>');
+                }
+            });
+        }
+
         function openManualSaleModal() {
             manualSaleItems = [];
             renderManualItems();
-            $('#txtManualBillNo, #txtManualNotes').val('');
+            $('#txtManualBillNo').val('');
             var today = new Date().toISOString().split('T')[0];
             $('#txtManualSaleDate').val(today);
             selectedVariantIds = {};
             updateVariantDropdownLabel();
             $('#variantStockError').hide().html('');
+            loadManualCouriers();
             loadManualMarketplaces(function () { loadVariants(); });
             $('#variantDropdownPanel').addClass('d-none');
             $('#txtVariantFilter').val('');
@@ -1769,14 +1810,16 @@
                 return;
             }
 
+            var courierId = $('#ddlManualCourier').val();
             var sale = {
                 SaleId:     0,
                 BillNumber: billNo,
                 Platform:   platform,
                 SaleDate:   saleDate,
                 Status:     'Completed',
-                Notes:      $.trim($('#txtManualNotes').val()),
-                SaleSource: 'Manual'
+                Notes:      null,
+                SaleSource: 'Manual',
+                CourierId:  courierId ? parseInt(courierId) : null
             };
 
             var itemsPayload = manualSaleItems.map(function (it) {

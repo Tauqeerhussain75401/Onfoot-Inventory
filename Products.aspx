@@ -6,8 +6,29 @@
     <style>
         .variant-table th, .variant-table td { padding: 5px 6px; vertical-align: middle; }
         .variant-table input[type=number] { width: 62px; text-align: center; padding: 3px 4px; }
-        #tblProducts tbody tr { cursor: pointer; }
-        #tblProducts tbody tr:hover td { background-color: #f0f4ff !important; }
+
+        /* ── Products Grid UI ── */
+        #tblProducts { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: 100% !important; }
+        #tblProducts thead th {
+            background: #f8fafc;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            white-space: nowrap;
+        }
+        #tblProducts tbody td {
+            padding: 11px 14px;
+            vertical-align: middle;
+            font-size: 0.895rem;
+            border-top: none;
+            border-bottom: 1px solid #e8edf5;
+        }
+        #tblProducts tbody tr:nth-child(even) td { background: #f7f9ff; }
+        #tblProducts tbody tr:hover td          { background: #eff6ff !important; cursor: pointer; }
     </style>
 </asp:Content>
 
@@ -76,30 +97,21 @@
 
     <!-- Products Table -->
     <div class="table-card">
-        <div class="table-card-header">
-            <h6><i class="fas fa-list me-2 text-primary"></i>Product List</h6>
-            <div class="d-flex align-items-center gap-2">
-                <label class="form-check form-switch mb-0 me-2">
-                    <input class="form-check-input" type="checkbox" id="chkShowInactive" onchange="loadProducts()">
-                    <span class="form-check-label text-muted" style="font-size:0.8rem;">Show Inactive</span>
-                </label>
-            </div>
-        </div>
-        <div class="table-card-body">
+        <div class="table-card-body p-0">
             <div class="table-responsive">
-                <table id="tblProducts" class="table table-hover w-100">
+                <table id="tblProducts" class="table mb-0 w-100">
                     <thead>
                         <tr>
-                            <th style="width:40px">#</th>
-                            <th>Code</th>
-                            <th>Product Name</th>
-                            <th>Category</th>
-                            <th>SKU(s)</th>
-                            <th style="width:90px">Colors</th>
-                            <th style="width:90px">Stock</th>
-                            <th style="width:110px">Sale Price</th>
-                            <th style="width:75px">Status</th>
-                            <th style="width:85px">Actions</th>
+                            <th style="width:10%">#</th>
+                            <th style="width:10%">Code</th>
+                            <th style="width:10%">Product Name</th>
+                            <th style="width:10%">Category</th>
+                            <th style="width:10%">SKU(s)</th>
+                            <th style="width:10%">Colors</th>
+                            <th style="width:10%">Stock</th>
+                            <th style="width:10%">Sale Price</th>
+                            <th style="width:10%">Status</th>
+                            <th style="width:10%">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="tblProductsBody"></tbody>
@@ -353,20 +365,21 @@
 
         function initDataTable() {
             productsTable = $('#tblProducts').DataTable({
-                responsive:  true,
-                pageLength:  15,
-                lengthMenu:  [[10, 15, 25, 50, 100], [10, 15, 25, 50, 100]],
-                columnDefs:  [{ orderable: false, targets: [9] }],
+                responsive:     false,
+                pageLength:     20,
+                lengthMenu:     [[10,20,50,100],[10,20,50,100]],
+                scrollY:        '520px',
+                scrollCollapse: false,
+                columnDefs:     [{ orderable: false, targets: [9] }],
                 language: {
                     search:            '',
                     searchPlaceholder: 'Search products...',
-                    lengthMenu:        'Show _MENU_ entries',
-                    info:              'Showing _START_ to _END_ of _TOTAL_ products',
-                    emptyTable:        "<div class='text-center py-4 text-muted'><i class='fas fa-inbox fa-2x mb-2 d-block'></i>No products found</div>"
+                    emptyTable:        "<div class='text-center py-5 text-muted'><i class='fas fa-inbox fa-2x mb-3 d-block opacity-50'></i><div style='font-size:0.95rem;'>No products found</div></div>",
+                    lengthMenu:        "Show _MENU_ entries",
+                    info:              "Showing _START_ - _END_ of _TOTAL_ products",
+                    paginate:          { previous: '<i class="fas fa-chevron-left"></i>', next: '<i class="fas fa-chevron-right"></i>' }
                 },
-                dom: "<'row mb-2'<'col-sm-6'l><'col-sm-6'f>>" +
-                     "<'row'<'col-sm-12'tr>>" +
-                     "<'row mt-2'<'col-sm-5'i><'col-sm-7'p>>"
+                dom: "<'row align-items-center px-3 pt-3 pb-2'<'col-sm-4'l><'col-sm-8'f>><'row'<'col-sm-12'tr>><'row align-items-center px-3 pt-2 pb-3'<'col-sm-5 text-muted small'i><'col-sm-7'p>>"
             });
         }
 

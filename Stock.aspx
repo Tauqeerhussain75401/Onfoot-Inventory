@@ -4,26 +4,28 @@
     <link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet" />
     <link href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap5.min.css" rel="stylesheet" />
     <style>
-        /* ── Stock grid ───────────────────────────────────────────── */
+        /* ── Stock Grid UI ── */
+        #tblStock { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: 100% !important; }
         #tblStock thead th {
             background: #f8fafc;
-            border-bottom: 2px solid #e2e8f0;
-            font-size: .72rem;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
             text-transform: uppercase;
-            letter-spacing: .5px;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
             white-space: nowrap;
-            padding: 10px 12px;
-            vertical-align: middle;
         }
         #tblStock tbody td {
-            padding: 9px 12px;
+            padding: 11px 14px;
             vertical-align: middle;
-            border-bottom: 1px solid #f1f5f9;
-            font-size: .875rem;
+            font-size: 0.895rem;
+            border-top: none;
+            border-bottom: 1px solid #e8edf5;
         }
-        #tblStock tbody tr:hover td { background: #f0f6ff; }
-        #tblStock tbody tr:nth-child(even) td { background: #fafbfd; }
-        #tblStock tbody tr:nth-child(even):hover td { background: #f0f6ff; }
+        #tblStock tbody tr:nth-child(even) td { background: #f7f9ff; }
+        #tblStock tbody tr:hover td          { background: #eff6ff !important; cursor: pointer; }
 
         /* ── Stock qty badges ─────────────────────────────────────── */
         .sq-badge {
@@ -42,8 +44,6 @@
         .sq-blue   { background: #2563eb; }
         .sq-orange { background: #ea580c; }
 
-        /* ── Misc ─────────────────────────────────────────────────── */
-        #tblStock tbody tr { cursor: default; }
         .mp-manage-row { border-bottom: 1px solid #f1f5f9; padding: 8px 0; }
     </style>
 </asp:Content>
@@ -67,9 +67,6 @@
             </button>
             <button class="btn btn-outline-secondary btn-sm" onclick="openAllHistoryModal()">
                 <i class="fas fa-history me-1"></i> All History
-            </button>
-            <button class="btn btn-outline-info btn-sm" onclick="openManageMarketplacesModal()">
-                <i class="fas fa-store me-1"></i> Marketplaces
             </button>
             <button class="btn btn-primary" onclick="openAllocateBulkModal()">
                 <i class="fas fa-share-alt me-1"></i> Allocate Stock
@@ -122,9 +119,9 @@
 
     <!-- Stock Table -->
     <div class="table-card">
-        <div class="table-card-body">
+        <div class="table-card-body p-0">
             <div class="table-responsive">
-                <table id="tblStock" class="table table-hover w-100">
+                <table id="tblStock" class="table mb-0 w-100">
                     <thead id="stockThead"></thead>
                     <tbody id="stockTbody"></tbody>
                 </table>
@@ -708,10 +705,22 @@
                 || '<tr><td colspan="100" class="text-center text-muted py-4">No variants found. Add products first.</td></tr>';
 
             dtStock = $('#tblStock').DataTable({
-                pageLength: 25,
-                order: [[1, 'asc']],
-                columnDefs: [{ orderable: false, targets: -1 }],
-                language: { emptyTable: 'No stock records found.' }
+                responsive:     false,
+                pageLength:     20,
+                lengthMenu:     [[10,20,50,100],[10,20,50,100]],
+                scrollY:        '1500px',
+                scrollCollapse: false,
+                order:          [[1, 'asc']],
+                columnDefs:     [{ orderable: false, targets: -1 }],
+                language: {
+                    search:            '',
+                    searchPlaceholder: 'Search...',
+                    emptyTable:        "<div class='text-center py-5 text-muted'><i class='fas fa-inbox fa-2x mb-3 d-block opacity-50'></i><div style='font-size:0.95rem;'>No stock records found</div></div>",
+                    lengthMenu:        "Show _MENU_ entries",
+                    info:              "Showing _START_ - _END_ of _TOTAL_ records",
+                    paginate:          { previous: '<i class="fas fa-chevron-left"></i>', next: '<i class="fas fa-chevron-right"></i>' }
+                },
+                dom: "<'row align-items-center px-3 pt-3 pb-2'<'col-sm-4'l><'col-sm-8'f>><'row'<'col-sm-12'tr>><'row align-items-center px-3 pt-2 pb-3'<'col-sm-5 text-muted small'i><'col-sm-7'p>>"
             });
         }
 
