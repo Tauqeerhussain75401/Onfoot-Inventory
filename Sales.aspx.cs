@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.Data;
 using System.Data.SqlClient;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Web.Services;
 using Newtonsoft.Json;
@@ -11,7 +12,7 @@ namespace Onfoot_Inventory
 {
     public partial class Sales : System.Web.UI.Page
     {
-        protected void Page_Load(object sender, EventArgs e) { EnsureCourierIdColumn(); }
+        protected void Page_Load(object sender, EventArgs e) { EnsureCourierIdColumn(); EnsureBOLFileColumn(); }
 
         private static void EnsureCourierIdColumn()
         {
@@ -35,6 +36,34 @@ namespace Onfoot_Inventory
             catch { }
         }
 
+        private static void EnsureBOLFileColumn()
+        {
+            try
+            {
+                using (var conn = GetConnection())
+                {
+                    conn.Open();
+                    using (var cmd = new SqlCommand(@"
+                        IF NOT EXISTS (
+                            SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = 'Sales' AND COLUMN_NAME = 'BOLFile')
+                        ALTER TABLE Sales ADD BOLFile NVARCHAR(500) NULL;
+                        IF NOT EXISTS (
+                            SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = 'Sales' AND COLUMN_NAME = 'TrackingNo')
+                        ALTER TABLE Sales ADD TrackingNo NVARCHAR(200) NULL;
+                        IF NOT EXISTS (
+                            SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = 'Sales' AND COLUMN_NAME = 'OrderRef')
+                        ALTER TABLE Sales ADD OrderRef NVARCHAR(200) NULL;", conn))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch { }
+        }
+
         // ============================================================
         // MODELS
         // ============================================================
@@ -48,6 +77,7 @@ namespace Onfoot_Inventory
             public string Notes           { get; set; }
             public string SaleSource      { get; set; }   // "Manual" | "BOL"
             public int?   CourierId       { get; set; }
+            public string OrderRef        { get; set; }
             // Customer
             public string CustPhone       { get; set; }
             public string CustName        { get; set; }
@@ -64,7 +94,13 @@ namespace Onfoot_Inventory
             public string  Size        { get; set; }
             public int     Quantity    { get; set; }
             public decimal SalePrice   { get; set; }
-            public string  OrderRef    { get; set; }
+        }
+
+        public class BolSaleGroup
+        {
+            public string            OrderRef   { get; set; }
+            public string            TrackingNo { get; set; }
+            public List<SaleItemModel> Items    { get; set; }
         }
 
         // ============================================================
@@ -282,16 +318,10 @@ namespace Onfoot_Inventory
                             s.SaleId,
                             s.Platform,
                             s.TotalAmount,
-                            CASE
-                                WHEN COUNT(DISTINCT NULLIF(LTRIM(RTRIM(si.OrderRef)), '')) > 0
-                                THEN COUNT(DISTINCT NULLIF(LTRIM(RTRIM(si.OrderRef)), ''))
-                                ELSE 1
-                            END AS OrderCount
+                            1 AS OrderCount
                         FROM  Sales s
-                        LEFT JOIN SaleItems si ON si.SaleId = s.SaleId
                         WHERE s.Status = 'Completed'
                           AND " + dateWhere + @"
-                        GROUP BY s.SaleId, s.Platform, s.TotalAmount
                     )
                     SELECT m.MarketplaceName,
                            ISNULL(SUM(soc.TotalAmount), 0) AS Revenue,
@@ -359,7 +389,7 @@ namespace Onfoot_Inventory
                 var sql = @"
                     SELECT " + topClause + @"s.SaleId, s.BillNumber, s.Platform, s.SaleDate,
                            s.TotalQty, s.TotalAmount, s.Status, s.Notes, s.CreatedDate,
-                           s.CustomerId,
+                           s.CustomerId, ISNULL(s.SaleSource, 'Manual') AS SaleSource,
                            CASE WHEN s.CustomerId IS NOT NULL THEN 1 ELSE 0 END AS HasCustomer,
                            COUNT(si.SaleItemId) AS ItemCount,
                            c.CourierName
@@ -369,8 +399,8 @@ namespace Onfoot_Inventory
                     " + where + @"
                     GROUP BY s.SaleId, s.BillNumber, s.Platform, s.SaleDate,
                              s.TotalQty, s.TotalAmount, s.Status, s.Notes, s.CreatedDate,
-                             s.CustomerId, c.CourierName
-                    ORDER BY s.CreatedDate DESC";
+                             s.CustomerId, s.SaleSource, c.CourierName
+                    ORDER BY s.SaleId DESC";
 
                 using (var cmd = new SqlCommand(sql, conn))
                 {
@@ -396,7 +426,8 @@ namespace Onfoot_Inventory
                                 ItemCount   = Convert.ToInt32(rdr["ItemCount"]),
                                 HasCustomer = Convert.ToInt32(rdr["HasCustomer"]) == 1,
                                 CreatedDate = Convert.ToDateTime(rdr["CreatedDate"]).ToString("dd-MMM-yyyy"),
-                                CourierName = SafeStr(rdr, "CourierName")
+                                CourierName = SafeStr(rdr, "CourierName"),
+                                SaleSource  = SafeStr(rdr, "SaleSource")
                             });
                         }
                     }
@@ -437,7 +468,9 @@ namespace Onfoot_Inventory
                                 TotalAmount = SafeDec(rdr, "TotalAmount"),
                                 Status      = SafeStr(rdr, "Status"),
                                 Notes       = SafeStr(rdr, "Notes"),
-                                CourierName = SafeStr(rdr, "CourierName")
+                                CourierName = SafeStr(rdr, "CourierName"),
+                                OrderRef    = SafeStr(rdr, "OrderRef"),
+                                TrackingNo  = SafeStr(rdr, "TrackingNo")
                             };
                         }
                     }
@@ -457,7 +490,6 @@ namespace Onfoot_Inventory
                             {
                                 SaleItemId  = Convert.ToInt32(rdr2["SaleItemId"]),
                                 VariantId   = rdr2.IsDBNull(rdr2.GetOrdinal("VariantId")) ? 0 : Convert.ToInt32(rdr2["VariantId"]),
-                                OrderRef    = SafeStr(rdr2, "OrderRef"),
                                 SKUNumber   = SafeStr(rdr2, "SKUNumber"),
                                 ProductName = SafeStr(rdr2, "ProductName"),
                                 Color       = SafeStr(rdr2, "Color"),
@@ -495,7 +527,8 @@ namespace Onfoot_Inventory
                                 BillNumber = SafeStr(rdr, "BillNumber"),
                                 Platform   = SafeStr(rdr, "Platform"),
                                 SaleDate   = Convert.ToDateTime(rdr["SaleDate"]).ToString("yyyy-MM-dd"),
-                                Notes      = SafeStr(rdr, "Notes")
+                                Notes      = SafeStr(rdr, "Notes"),
+                                OrderRef   = SafeStr(rdr, "OrderRef")
                             };
                     }
                 }
@@ -517,8 +550,7 @@ namespace Onfoot_Inventory
                                 Color       = SafeStr(rdr2, "Color"),
                                 Size        = SafeStr(rdr2, "Size"),
                                 Quantity    = Convert.ToInt32(rdr2["Quantity"]),
-                                SalePrice   = SafeDec(rdr2, "SalePrice"),
-                                OrderRef    = SafeStr(rdr2, "OrderRef")
+                                SalePrice   = SafeDec(rdr2, "SalePrice")
                             });
                     }
                 }
@@ -641,7 +673,8 @@ namespace Onfoot_Inventory
                     using (var cmd = new SqlCommand(@"
                         UPDATE Sales
                         SET    BillNumber = @BillNumber, Platform = @Platform, SaleDate = @SaleDate,
-                               TotalQty = @TotalQty, TotalAmount = @TotalAmount, Notes = @Notes, UpdatedDate = GETDATE()
+                               TotalQty = @TotalQty, TotalAmount = @TotalAmount, Notes = @Notes,
+                               OrderRef = @OrderRef, UpdatedDate = GETDATE()
                         WHERE  SaleId = @SaleId", conn))
                     {
                         cmd.Parameters.AddWithValue("@BillNumber",  sale.BillNumber.Trim());
@@ -649,7 +682,8 @@ namespace Onfoot_Inventory
                         cmd.Parameters.AddWithValue("@SaleDate",    DateTime.Parse(sale.SaleDate));
                         cmd.Parameters.AddWithValue("@TotalQty",    totalQty);
                         cmd.Parameters.AddWithValue("@TotalAmount", totalAmount);
-                        cmd.Parameters.AddWithValue("@Notes",       (object)(sale.Notes?.Trim()) ?? DBNull.Value);
+                        cmd.Parameters.AddWithValue("@Notes",       (object)(sale.Notes?.Trim())   ?? DBNull.Value);
+                        cmd.Parameters.AddWithValue("@OrderRef",    string.IsNullOrWhiteSpace(sale.OrderRef) ? (object)DBNull.Value : sale.OrderRef.Trim());
                         cmd.Parameters.AddWithValue("@SaleId",      sale.SaleId);
                         cmd.ExecuteNonQuery();
                     }
@@ -671,9 +705,9 @@ namespace Onfoot_Inventory
 
                         using (var cmd = new SqlCommand(@"
                             INSERT INTO SaleItems
-                                (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount, OrderRef)
+                                (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount)
                             VALUES
-                                (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount, @OrderRef)", conn))
+                                (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount)", conn))
                         {
                             cmd.Parameters.AddWithValue("@SaleId",      sale.SaleId);
                             cmd.Parameters.AddWithValue("@VariantId",   it.VariantId > 0 ? (object)it.VariantId : DBNull.Value);
@@ -683,7 +717,6 @@ namespace Onfoot_Inventory
                             cmd.Parameters.AddWithValue("@Size",        (object)(it.Size)        ?? DBNull.Value);
                             cmd.Parameters.AddWithValue("@Quantity",    it.Quantity);
                             cmd.Parameters.AddWithValue("@SalePrice",   it.SalePrice);
-                            cmd.Parameters.AddWithValue("@OrderRef",    (object)(it.OrderRef?.Trim()) ?? DBNull.Value);
                             cmd.Parameters.AddWithValue("@TotalAmount", lineTotal);
                             cmd.ExecuteNonQuery();
                         }
@@ -769,7 +802,10 @@ namespace Onfoot_Inventory
                            p.ProductName, p.ProductCode, p.SalePrice
                     FROM   ProductVariants pv
                     INNER JOIN Products p ON p.ProductId = pv.ProductId
-                    WHERE  pv.SKUNumbers = @SKU
+                    WHERE  EXISTS (
+                               SELECT 1 FROM STRING_SPLIT(pv.SKUNumbers, ',') AS ss
+                               WHERE LTRIM(RTRIM(ss.value)) = @SKU
+                           )
                       AND  pv.IsActive   = 1
                       AND  p.IsActive    = 1";
 
@@ -801,7 +837,7 @@ namespace Onfoot_Inventory
         // SAVE SALE  (insert + deduct stock)
         // ============================================================
         [WebMethod]
-        public static string SaveSale(SaleModel sale, string itemsJson, string customersJson = "")
+        public static string SaveSale(SaleModel sale, string itemsJson, string customersJson = "", string bolFileName = "", string trackingNo = "")
         {
             try
             {
@@ -846,9 +882,9 @@ namespace Onfoot_Inventory
 
                     // Insert Sale header
                     const string insertSale = @"
-                        INSERT INTO Sales (BillNumber, Platform, SaleDate, TotalQty, TotalAmount, Status, Notes, SaleSource, CourierId)
+                        INSERT INTO Sales (BillNumber, Platform, SaleDate, TotalQty, TotalAmount, Status, Notes, SaleSource, CourierId, BOLFile, TrackingNo, OrderRef)
                         OUTPUT INSERTED.SaleId
-                        VALUES (@BillNumber, @Platform, @SaleDate, @TotalQty, @TotalAmount, 'Completed', @Notes, @SaleSource, @CourierId)";
+                        VALUES (@BillNumber, @Platform, @SaleDate, @TotalQty, @TotalAmount, 'Completed', @Notes, @SaleSource, @CourierId, @BOLFile, @TrackingNo, @OrderRef)";
 
                     using (var cmd = new SqlCommand(insertSale, conn))
                     {
@@ -857,9 +893,12 @@ namespace Onfoot_Inventory
                         cmd.Parameters.AddWithValue("@SaleDate",    DateTime.Parse(sale.SaleDate));
                         cmd.Parameters.AddWithValue("@TotalQty",    totalQty);
                         cmd.Parameters.AddWithValue("@TotalAmount", totalAmount);
-                        cmd.Parameters.AddWithValue("@Notes",       (object)(sale.Notes?.Trim()) ?? DBNull.Value);
+                        cmd.Parameters.AddWithValue("@Notes",       (object)(sale.Notes?.Trim())   ?? DBNull.Value);
                         cmd.Parameters.AddWithValue("@SaleSource",  string.IsNullOrWhiteSpace(sale.SaleSource) ? "Manual" : sale.SaleSource.Trim());
                         cmd.Parameters.AddWithValue("@CourierId",   sale.CourierId.HasValue ? (object)sale.CourierId.Value : DBNull.Value);
+                        cmd.Parameters.AddWithValue("@BOLFile",     string.IsNullOrWhiteSpace(bolFileName)   ? (object)DBNull.Value : bolFileName.Trim());
+                        cmd.Parameters.AddWithValue("@TrackingNo",  string.IsNullOrWhiteSpace(trackingNo)    ? (object)DBNull.Value : trackingNo.Trim());
+                        cmd.Parameters.AddWithValue("@OrderRef",    string.IsNullOrWhiteSpace(sale.OrderRef) ? (object)DBNull.Value : sale.OrderRef.Trim());
                         saleId = Convert.ToInt32(cmd.ExecuteScalar());
                     }
 
@@ -880,9 +919,9 @@ namespace Onfoot_Inventory
 
                         const string insertItem = @"
                             INSERT INTO SaleItems
-                                (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount, OrderRef)
+                                (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount)
                             VALUES
-                                (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount, @OrderRef)";
+                                (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount)";
 
                         using (var cmd = new SqlCommand(insertItem, conn))
                         {
@@ -894,7 +933,6 @@ namespace Onfoot_Inventory
                             cmd.Parameters.AddWithValue("@Size",        (object)(it.Size)        ?? DBNull.Value);
                             cmd.Parameters.AddWithValue("@Quantity",    it.Quantity);
                             cmd.Parameters.AddWithValue("@SalePrice",   it.SalePrice);
-                            cmd.Parameters.AddWithValue("@OrderRef",    (object)(it.OrderRef?.Trim()) ?? DBNull.Value);
                             cmd.Parameters.AddWithValue("@TotalAmount", lineTotal);
                             cmd.ExecuteNonQuery();
                         }
@@ -1013,7 +1051,7 @@ namespace Onfoot_Inventory
                     }
                 }
 
-                // Save all BOL customers (bulk — upsert by phone)
+                // Save all BOL customers (bulk — upsert by phone) and link first to Sale.CustomerId
                 if (!string.IsNullOrWhiteSpace(customersJson))
                 {
                     var bolCustomers = JsonConvert.DeserializeObject<List<CustomerRecord>>(customersJson)
@@ -1021,6 +1059,8 @@ namespace Onfoot_Inventory
                     using (var cc = GetConnection())
                     {
                         cc.Open();
+                        int firstCustomerId = 0;
+
                         foreach (var c in bolCustomers)
                         {
                             if (string.IsNullOrWhiteSpace(c.Phone)) continue;
@@ -1034,17 +1074,19 @@ namespace Onfoot_Inventory
                                 if (r != null) existId = Convert.ToInt32(r);
                             }
 
+                            int savedId = 0;
                             if (existId == 0)
                             {
                                 using (var ins = new SqlCommand(@"
                                     INSERT INTO Customers (Name, Phone, Destination, Address, BuyingCount)
+                                    OUTPUT INSERTED.CustomerId
                                     VALUES (@N, @P, @Dest, @A, 1)", cc))
                                 {
                                     ins.Parameters.AddWithValue("@N",    c.Name?.Trim()                 ?? "");
                                     ins.Parameters.AddWithValue("@P",    ph);
                                     ins.Parameters.AddWithValue("@Dest", (object)(c.Destination?.Trim()) ?? DBNull.Value);
                                     ins.Parameters.AddWithValue("@A",    (object)(c.Address?.Trim())     ?? DBNull.Value);
-                                    ins.ExecuteNonQuery();
+                                    savedId = Convert.ToInt32(ins.ExecuteScalar());
                                 }
                             }
                             else
@@ -1063,13 +1105,309 @@ namespace Onfoot_Inventory
                                     upd.Parameters.AddWithValue("@A",    (object)(c.Address?.Trim())     ?? DBNull.Value);
                                     upd.Parameters.AddWithValue("@Id",   existId);
                                     upd.ExecuteNonQuery();
+                                    savedId = existId;
                                 }
+                            }
+
+                            if (firstCustomerId == 0 && savedId > 0)
+                                firstCustomerId = savedId;
+                        }
+
+                        // Link the first BOL customer to the sale (only if not already linked)
+                        if (firstCustomerId > 0)
+                        {
+                            using (var upd = new SqlCommand(
+                                "UPDATE Sales SET CustomerId=@C WHERE SaleId=@S AND CustomerId IS NULL", cc))
+                            {
+                                upd.Parameters.AddWithValue("@C", firstCustomerId);
+                                upd.Parameters.AddWithValue("@S", saleId);
+                                upd.ExecuteNonQuery();
                             }
                         }
                     }
                 }
 
                 return JsonConvert.SerializeObject(new { success = true, message = "Sale saved successfully." });
+            }
+            catch (Exception ex)
+            {
+                return Fail("Error: " + ex.Message);
+            }
+        }
+
+        // ============================================================
+        // SAVE BOL SALES  (one Sale per OrderRef group)
+        // ============================================================
+        [WebMethod]
+        public static string SaveBOLSales(
+            string platform, string saleDate, int? courierId,
+            string baseBillNumber, string groupsJson, string customersJson, string bolFileName,
+            string saleSource = "BOL", string notes = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(platform)) return Fail("Platform is required.");
+                if (string.IsNullOrWhiteSpace(saleDate))  return Fail("Sale Date is required.");
+
+                var groups = JsonConvert.DeserializeObject<List<BolSaleGroup>>(groupsJson ?? "[]")
+                             ?? new List<BolSaleGroup>();
+                groups = groups.Where(g => g.Items != null && g.Items.Count > 0).ToList();
+                if (groups.Count == 0) return Fail("No items to save.");
+
+                var customers = JsonConvert.DeserializeObject<List<CustomerRecord>>(customersJson ?? "[]")
+                                ?? new List<CustomerRecord>();
+                var custByOrderRef = new Dictionary<string, CustomerRecord>(StringComparer.OrdinalIgnoreCase);
+                foreach (var c in customers)
+                    if (!string.IsNullOrWhiteSpace(c.OrderRef) && !custByOrderRef.ContainsKey(c.OrderRef))
+                        custByOrderRef[c.OrderRef] = c;
+
+                var saleDateParsed = DateTime.Parse(saleDate);
+                bool multiGroup    = groups.Count > 1;
+
+                using (var conn = GetConnection())
+                {
+                    conn.Open();
+
+                    // Resolve marketplace ID from platform name once
+                    int? marketplaceId = null;
+                    using (var cmd = new SqlCommand(
+                        "SELECT TOP 1 MarketplaceId FROM Marketplaces WHERE MarketplaceName = @P AND IsActive = 1", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@P", platform);
+                        var r = cmd.ExecuteScalar();
+                        if (r != null) marketplaceId = Convert.ToInt32(r);
+                    }
+
+                    // Count existing sales on this date for sequential bill numbers (multi-group)
+                    int existingCount = 0;
+                    if (multiGroup)
+                    {
+                        using (var cmd = new SqlCommand(
+                            "SELECT COUNT(*) FROM Sales WHERE CAST(SaleDate AS DATE) = @D", conn))
+                        {
+                            cmd.Parameters.AddWithValue("@D", saleDateParsed.Date);
+                            existingCount = Convert.ToInt32(cmd.ExecuteScalar());
+                        }
+                    }
+
+                    // Reject if any OrderRef from this BOL already exists in Sales
+                    foreach (var grp in groups)
+                    {
+                        if (string.IsNullOrWhiteSpace(grp.OrderRef)) continue;
+                        using (var chk = new SqlCommand(
+                            "SELECT COUNT(1) FROM Sales WHERE OrderRef = @OR", conn))
+                        {
+                            chk.Parameters.AddWithValue("@OR", grp.OrderRef.Trim());
+                            if (Convert.ToInt32(chk.ExecuteScalar()) > 0)
+                                return Fail("Order ID '" + grp.OrderRef.Trim() + "' already exists. This BOL may have already been uploaded.");
+                        }
+                    }
+
+                    // Reject if any TrackingNo from this BOL already exists in Sales
+                    foreach (var grp in groups)
+                    {
+                        if (string.IsNullOrWhiteSpace(grp.TrackingNo)) continue;
+                        using (var chk = new SqlCommand(
+                            "SELECT COUNT(1) FROM Sales WHERE TrackingNo = @TN", conn))
+                        {
+                            chk.Parameters.AddWithValue("@TN", grp.TrackingNo.Trim());
+                            if (Convert.ToInt32(chk.ExecuteScalar()) > 0)
+                                return Fail("Tracking No '" + grp.TrackingNo.Trim() + "' already exists. This BOL may have already been uploaded.");
+                        }
+                    }
+
+                    int groupIndex = 0;
+                    foreach (var grp in groups)
+                    {
+                        // Determine bill number
+                        string billNo;
+                        if (!multiGroup)
+                        {
+                            billNo = string.IsNullOrWhiteSpace(baseBillNumber)
+                                ? saleDate + " - (01)"
+                                : baseBillNumber.Trim();
+                        }
+                        else
+                        {
+                            int seq = existingCount + groupIndex + 1;
+                            billNo = saleDate + " - (" + seq.ToString("D2") + ")";
+                            while (true)
+                            {
+                                using (var chk = new SqlCommand(
+                                    "SELECT COUNT(1) FROM Sales WHERE BillNumber = @BN AND Platform = @PL", conn))
+                                {
+                                    chk.Parameters.AddWithValue("@BN", billNo);
+                                    chk.Parameters.AddWithValue("@PL", platform);
+                                    if (Convert.ToInt32(chk.ExecuteScalar()) == 0) break;
+                                }
+                                seq++;
+                                billNo = saleDate + " - (" + seq.ToString("D2") + ")";
+                            }
+                            existingCount = seq - 1;
+                        }
+
+                        // Compute totals
+                        int     totalQty    = 0;
+                        decimal totalAmount = 0;
+                        foreach (var it in grp.Items) { totalQty += it.Quantity; totalAmount += it.Quantity * it.SalePrice; }
+
+                        // Insert Sale header
+                        const string insertSale = @"
+                            INSERT INTO Sales (BillNumber, Platform, SaleDate, TotalQty, TotalAmount, Status, Notes, SaleSource, CourierId, BOLFile, TrackingNo, OrderRef)
+                            OUTPUT INSERTED.SaleId
+                            VALUES (@BillNumber, @Platform, @SaleDate, @TotalQty, @TotalAmount, 'Completed', @Notes, @SaleSource, @CourierId, @BOLFile, @TrackingNo, @OrderRef)";
+
+                        int saleId;
+                        using (var cmd = new SqlCommand(insertSale, conn))
+                        {
+                            cmd.Parameters.AddWithValue("@BillNumber",  billNo);
+                            cmd.Parameters.AddWithValue("@Platform",    platform);
+                            cmd.Parameters.AddWithValue("@SaleDate",    saleDateParsed);
+                            cmd.Parameters.AddWithValue("@TotalQty",    totalQty);
+                            cmd.Parameters.AddWithValue("@TotalAmount", totalAmount);
+                            cmd.Parameters.AddWithValue("@Notes",       string.IsNullOrWhiteSpace(notes)             ? (object)DBNull.Value : notes.Trim());
+                            cmd.Parameters.AddWithValue("@SaleSource",  string.IsNullOrWhiteSpace(saleSource)        ? "Manual" : saleSource.Trim());
+                            cmd.Parameters.AddWithValue("@CourierId",   courierId.HasValue ? (object)courierId.Value : DBNull.Value);
+                            cmd.Parameters.AddWithValue("@BOLFile",     string.IsNullOrWhiteSpace(bolFileName)       ? (object)DBNull.Value : bolFileName.Trim());
+                            cmd.Parameters.AddWithValue("@TrackingNo",  string.IsNullOrWhiteSpace(grp.TrackingNo)    ? (object)DBNull.Value : grp.TrackingNo.Trim());
+                            cmd.Parameters.AddWithValue("@OrderRef",    string.IsNullOrWhiteSpace(grp.OrderRef)      ? (object)DBNull.Value : grp.OrderRef.Trim());
+                            saleId = Convert.ToInt32(cmd.ExecuteScalar());
+                        }
+
+                        // Insert SaleItems + deduct stock
+                        foreach (var it in grp.Items)
+                        {
+                            decimal lineTotal = it.Quantity * it.SalePrice;
+
+                            const string insertItem = @"
+                                INSERT INTO SaleItems
+                                    (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount)
+                                OUTPUT INSERTED.SaleItemId
+                                VALUES
+                                    (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount)";
+
+                            int saleItemId;
+                            using (var cmd = new SqlCommand(insertItem, conn))
+                            {
+                                cmd.Parameters.AddWithValue("@SaleId",      saleId);
+                                cmd.Parameters.AddWithValue("@VariantId",   it.VariantId > 0 ? (object)it.VariantId : DBNull.Value);
+                                cmd.Parameters.AddWithValue("@SKUNumber",   it.SKUNumber  ?? "");
+                                cmd.Parameters.AddWithValue("@ProductName", (object)(it.ProductName) ?? DBNull.Value);
+                                cmd.Parameters.AddWithValue("@Color",       (object)(it.Color)       ?? DBNull.Value);
+                                cmd.Parameters.AddWithValue("@Size",        (object)(it.Size)        ?? DBNull.Value);
+                                cmd.Parameters.AddWithValue("@Quantity",    it.Quantity);
+                                cmd.Parameters.AddWithValue("@SalePrice",   it.SalePrice);
+                                cmd.Parameters.AddWithValue("@TotalAmount", lineTotal);
+                                saleItemId = Convert.ToInt32(cmd.ExecuteScalar());
+                            }
+
+                            if (it.VariantId > 0)
+                            {
+                                if (marketplaceId.HasValue)
+                                {
+                                    using (var cmd = new SqlCommand(@"
+                                        UPDATE MarketplaceInventory
+                                        SET    StockQuantity = StockQuantity - @qty
+                                        WHERE  VariantId = @vid AND MarketplaceId = @mid
+                                          AND  StockQuantity >= @qty", conn))
+                                    {
+                                        cmd.Parameters.AddWithValue("@qty", it.Quantity);
+                                        cmd.Parameters.AddWithValue("@vid", it.VariantId);
+                                        cmd.Parameters.AddWithValue("@mid", marketplaceId.Value);
+                                        cmd.ExecuteNonQuery();
+                                    }
+                                }
+                                else
+                                {
+                                    using (var cmd = new SqlCommand(@"
+                                        UPDATE ProductVariants
+                                        SET    StockQuantity = StockQuantity - @qty
+                                        WHERE  VariantId = @vid AND StockQuantity >= @qty", conn))
+                                    {
+                                        cmd.Parameters.AddWithValue("@qty", it.Quantity);
+                                        cmd.Parameters.AddWithValue("@vid", it.VariantId);
+                                        cmd.ExecuteNonQuery();
+                                    }
+                                }
+
+                                using (var cmd = new SqlCommand(@"
+                                    INSERT INTO SaleStockDeductions
+                                        (SaleId, SaleItemId, VariantId, MarketplaceId, Quantity)
+                                    VALUES (@SaleId, @SaleItemId, @VariantId, @MarketplaceId, @Quantity)", conn))
+                                {
+                                    cmd.Parameters.AddWithValue("@SaleId",        saleId);
+                                    cmd.Parameters.AddWithValue("@SaleItemId",    saleItemId > 0 ? (object)saleItemId : DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@VariantId",     it.VariantId);
+                                    cmd.Parameters.AddWithValue("@MarketplaceId", marketplaceId.HasValue ? (object)marketplaceId.Value : DBNull.Value);
+                                    cmd.Parameters.AddWithValue("@Quantity",      it.Quantity);
+                                    cmd.ExecuteNonQuery();
+                                }
+                            }
+                        }
+
+                        // Upsert customer and link to sale
+                        if (custByOrderRef.TryGetValue(grp.OrderRef ?? "", out CustomerRecord matchedCust)
+                            && !string.IsNullOrWhiteSpace(matchedCust.Phone))
+                        {
+                            string normPhone = NormalizePhone(matchedCust.Phone);
+                            int savedCustId  = 0;
+
+                            int existId = 0;
+                            using (var cmd = new SqlCommand(
+                                "SELECT TOP 1 CustomerId FROM Customers WHERE Phone = @Ph", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@Ph", normPhone);
+                                var r = cmd.ExecuteScalar();
+                                if (r != null) existId = Convert.ToInt32(r);
+                            }
+
+                            if (existId == 0)
+                            {
+                                using (var ins = new SqlCommand(@"
+                                    INSERT INTO Customers (Name, Phone, Destination, Address)
+                                    OUTPUT INSERTED.CustomerId
+                                    VALUES (@N, @Ph, @Dest, @A)", conn))
+                                {
+                                    ins.Parameters.AddWithValue("@N",    matchedCust.Name?.Trim()              ?? "");
+                                    ins.Parameters.AddWithValue("@Ph",   normPhone);
+                                    ins.Parameters.AddWithValue("@Dest", (object)(matchedCust.Destination?.Trim()) ?? DBNull.Value);
+                                    ins.Parameters.AddWithValue("@A",    (object)(matchedCust.Address?.Trim())     ?? DBNull.Value);
+                                    savedCustId = Convert.ToInt32(ins.ExecuteScalar());
+                                }
+                            }
+                            else
+                            {
+                                using (var upd = new SqlCommand(@"
+                                    UPDATE Customers
+                                    SET    Name = @N, Destination = @Dest, Address = @A, UpdatedDate = GETDATE()
+                                    WHERE  CustomerId = @Id", conn))
+                                {
+                                    upd.Parameters.AddWithValue("@N",    matchedCust.Name?.Trim()              ?? "");
+                                    upd.Parameters.AddWithValue("@Dest", (object)(matchedCust.Destination?.Trim()) ?? DBNull.Value);
+                                    upd.Parameters.AddWithValue("@A",    (object)(matchedCust.Address?.Trim())     ?? DBNull.Value);
+                                    upd.Parameters.AddWithValue("@Id",   existId);
+                                    upd.ExecuteNonQuery();
+                                    savedCustId = existId;
+                                }
+                            }
+
+                            if (savedCustId > 0)
+                            {
+                                using (var upd = new SqlCommand(
+                                    "UPDATE Sales SET CustomerId=@C WHERE SaleId=@S AND CustomerId IS NULL", conn))
+                                {
+                                    upd.Parameters.AddWithValue("@C", savedCustId);
+                                    upd.Parameters.AddWithValue("@S", saleId);
+                                    upd.ExecuteNonQuery();
+                                }
+                            }
+                        }
+
+                        groupIndex++;
+                    }
+                }
+
+                return JsonConvert.SerializeObject(new { success = true, message = "BOL sales saved successfully." });
             }
             catch (Exception ex)
             {
@@ -1297,8 +1635,8 @@ namespace Onfoot_Inventory
         {
             try
             {
-                var extracted  = new List<object>();
-                var customers  = new List<object>();
+                var extracted = new List<object>();
+                var customers = new List<object>();
 
                 var pages = bolText.Split(new[] { "---PAGE---" }, StringSplitOptions.RemoveEmptyEntries);
 
@@ -1306,14 +1644,65 @@ namespace Onfoot_Inventory
                 {
                     conn.Open();
 
+                    // ── Step 1: Pre-load ALL active variant SKUs into memory (one query) ──
+                    // skuMap   : trimmed-SKU → variant  (exact lookup, O(1))
+                    // skuEntries: flat list of (sku, variant) pairs for LIKE-pattern fallback
+                    var skuMap     = new Dictionary<string, VariantLookupResult>(StringComparer.OrdinalIgnoreCase);
+                    var skuEntries = new List<(string Sku, VariantLookupResult Variant)>();
+
+                    using (var cmd = new SqlCommand(@"
+                        SELECT pv.VariantId, pv.SKUNumbers, pv.Color, pv.Size,
+                               p.ProductName, p.ProductCode, p.SalePrice
+                        FROM   ProductVariants pv
+                        INNER  JOIN Products p ON p.ProductId = pv.ProductId
+                        WHERE  pv.IsActive = 1 AND p.IsActive = 1", conn))
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        while (rdr.Read())
+                        {
+                            var vr = new VariantLookupResult
+                            {
+                                VariantId   = Convert.ToInt32(rdr["VariantId"]),
+                                SKUNumber   = SafeStr(rdr, "SKUNumbers"),
+                                ProductName = SafeStr(rdr, "ProductName"),
+                                Color       = SafeStr(rdr, "Color"),
+                                Size        = SafeStr(rdr, "Size"),
+                                SalePrice   = SafeDec(rdr, "SalePrice"),
+                                Matched     = true
+                            };
+                            // Split comma-separated SKUs and index each one by both
+                            // the raw trimmed value AND its normalized form, so BOL
+                            // descriptions stored with spaces ("Flat - 033 - Black - Size - 38")
+                            // match the normalized lookup key ("Flat-033-Black-38").
+                            foreach (var raw in vr.SKUNumber.Split(','))
+                            {
+                                string sku = raw.Trim();
+                                if (string.IsNullOrEmpty(sku)) continue;
+                                if (!skuMap.ContainsKey(sku)) skuMap[sku] = vr;
+                                string normKey = NormalizeSKU(sku);
+                                if (!skuMap.ContainsKey(normKey)) skuMap[normKey] = vr;
+                                skuEntries.Add((sku, vr));
+                            }
+                        }
+                    }
+
+                    // ── Step 2: Process each BOL page ────────────────────────────────────
                     foreach (var page in pages)
                     {
                         // ── Order Reference ─────────────────────────────
-                        var orderMatch = Regex.Match(page, @"#(\d+)");
+                        // Anchor to "Order Reference" label first to avoid matching street numbers like "Street #3"
+                        var orderMatch = Regex.Match(page, @"Order\s+Reference[:\s#]*(\d+)", RegexOptions.IgnoreCase);
+                        if (!orderMatch.Success)
+                            orderMatch = Regex.Match(page, @"#\s*(\d{4,})");   // fallback: 4+ digit ref
                         string orderRef = orderMatch.Success ? "#" + orderMatch.Groups[1].Value : "";
 
+                        // ── Tracking Number ───────────────────────────────
+                        // PostEx: all-digit 12+ chars (e.g. 25599760010021)
+                        // Leopards: 1-3 uppercase letters + 9+ digits (e.g. KI7535710536)
+                        var trackingM2 = Regex.Match(page, @"\b([A-Z]{1,3}\d{9,}|\d{12,})\b");
+                        string trackingNo = trackingM2.Success ? trackingM2.Groups[1].Value : "";
+
                         // ── Customer / Consignee data ────────────────────
-                        // Name: "Name: Shahid Khan OMS Phone:"
                         var nameM  = Regex.Match(page, @"Name:\s*(.+?)\s*(?:OMS)?\s*(?:Phone:|PostEx|$)", RegexOptions.IgnoreCase);
                         var phoneM = Regex.Match(page, @"Phone:\s*(\d[\d\s\-]{8,14})(?:\s|Scan|$)");
                         var addrM  = Regex.Match(page, @"Address:\s*(.+?)(?:Scan\s+for|\d{12,}|Destination:)", RegexOptions.Singleline | RegexOptions.IgnoreCase);
@@ -1350,20 +1739,27 @@ namespace Onfoot_Inventory
                         decimal cod = codM.Success ? decimal.Parse(codM.Groups[1].Value) : 0;
 
                         // Capture: [Qty X ProductTitle (FullDesc)]
-                        // FullDesc = "Flat - 056 - Peach - Size 39"
                         var itemMatches = Regex.Matches(productsText,
                             @"\[(\d+)\s+X\s+[^\(]+\(([^)]+)\)",
                             RegexOptions.IgnoreCase);
+
+                        // Split COD equally across total units so each SKU gets its share
+                        int totalItemQty = 0;
+                        foreach (Match m0 in itemMatches)
+                            totalItemQty += int.Parse(m0.Groups[1].Value.Trim());
+                        decimal perUnitPrice = totalItemQty > 0 ? Math.Round(cod / totalItemQty, 2) : 0;
 
                         foreach (Match m in itemMatches)
                         {
                             int    qty      = int.Parse(m.Groups[1].Value.Trim());
                             string fullDesc = m.Groups[2].Value.Trim(); // e.g. "Flat - 056 - Peach - Size 39"
 
-                            // Extract ProductCode: first number after a dash  "- 056 -"
                             var codeM2 = Regex.Match(fullDesc, @"-\s*(\d+)\s*-");
-                            // Extract Size: number after "Size"
                             var sizeM2 = Regex.Match(fullDesc, @"Size\s*-?\s*(\d+)", RegexOptions.IgnoreCase);
+                            // Fallback: no "Size" keyword → take the last number at the end of the desc
+                            // e.g. "Pumps - 059 - Black - 39" → 39
+                            if (!sizeM2.Success)
+                                sizeM2 = Regex.Match(fullDesc.TrimEnd(), @"-\s*(\d{2,3})\s*$");
 
                             string productCode = codeM2.Success ? codeM2.Groups[1].Value.Trim() : "";
                             string size        = sizeM2.Success ? sizeM2.Groups[1].Value.Trim() : "";
@@ -1371,83 +1767,64 @@ namespace Onfoot_Inventory
                             var v = new VariantLookupResult
                             {
                                 VariantId   = 0,
-                                SKUNumber   = fullDesc,                            // show full BOL desc when not matched
+                                SKUNumber   = fullDesc,
                                 ProductName = "(" + fullDesc + ")",
                                 Color       = "",
                                 Size        = size,
-                                SalePrice   = cod,
+                                SalePrice   = perUnitPrice,
                                 Matched     = false
                             };
 
-                            if (!string.IsNullOrEmpty(productCode) && !string.IsNullOrEmpty(size))
+                            // Stage 0: normalize BOL desc → exact in-memory SKU lookup
+                            // "Flat - 056 - Peach - Size 39"     → "Flat-056-Peach-39"
+                            // "Flat - 048 - Marhoon - Size - 39" → "Flat-048-Marhoon-39"
+                            var normSku = NormalizeSKU(fullDesc);
+
+                            bool found = skuMap.TryGetValue(normSku, out var hit);
+
+                            if (!found && !string.IsNullOrEmpty(productCode) && !string.IsNullOrEmpty(size))
                             {
-                                // Extract color from BOL description: "Flat - 056 - Peach - Size 39" → "Peach"
                                 var colorM = Regex.Match(fullDesc,
                                     @"-\s*\d+\s*-\s*([\w\s]+?)\s*-?\s*Size",
                                     RegexOptions.IgnoreCase);
                                 string bolColor = colorM.Success ? colorM.Groups[1].Value.Trim() : "";
 
-                                const string skuSql = @"
-                                    SELECT TOP 1 pv.VariantId, pv.SKUNumbers, pv.Color, pv.Size,
-                                                 p.ProductName, p.ProductCode, p.SalePrice
-                                    FROM   ProductVariants pv
-                                    INNER JOIN Products p ON p.ProductId = pv.ProductId
-                                    WHERE  pv.SKUNumbers LIKE @SKUPattern
-                                      AND  pv.IsActive = 1
-                                      AND  p.IsActive  = 1";
-
-                                // Stage 1: match Code + Color + Size  (e.g. 056-%-Peach-39)
-                                bool found = false;
+                                // Stage 1: Code + Color + Size  (e.g. 056-%-Peach-39)
                                 if (!string.IsNullOrEmpty(bolColor))
                                 {
-                                    using (var cmd = new SqlCommand(skuSql, conn))
-                                    {
-                                        cmd.Parameters.AddWithValue("@SKUPattern",
-                                            productCode + "-%-" + bolColor + "-" + size);
-                                        using (var rdr = cmd.ExecuteReader())
-                                        {
-                                            if (rdr.Read())
-                                            {
-                                                v.VariantId   = Convert.ToInt32(rdr["VariantId"]);
-                                                v.SKUNumber   = SafeStr(rdr, "SKUNumbers");
-                                                v.ProductName = SafeStr(rdr, "ProductName");
-                                                v.Color       = SafeStr(rdr, "Color");
-                                                v.Size        = SafeStr(rdr, "Size");
-                                                v.SalePrice   = SafeDec(rdr, "SalePrice");
-                                                v.Matched     = true;
-                                                found         = true;
-                                            }
-                                        }
-                                    }
+                                    string p1 = productCode + "-%-" + bolColor + "-" + size;
+                                    var e1 = skuEntries.Find(e => SqlLike(e.Sku, p1));
+                                    if (e1.Variant != null) { hit = e1.Variant; found = true; }
                                 }
 
-                                // Stage 2 fallback: match Code + Size only (e.g. 056-%-39)
+                                // Stage 2 fallback: Code + Size only  (e.g. 056-%-39)
                                 if (!found)
                                 {
-                                    using (var cmd = new SqlCommand(skuSql, conn))
-                                    {
-                                        cmd.Parameters.AddWithValue("@SKUPattern",
-                                            productCode + "-%-" + size);
-                                        using (var rdr = cmd.ExecuteReader())
-                                        {
-                                            if (rdr.Read())
-                                            {
-                                                v.VariantId   = Convert.ToInt32(rdr["VariantId"]);
-                                                v.SKUNumber   = SafeStr(rdr, "SKUNumbers");
-                                                v.ProductName = SafeStr(rdr, "ProductName");
-                                                v.Color       = SafeStr(rdr, "Color");
-                                                v.Size        = SafeStr(rdr, "Size");
-                                                v.SalePrice   = SafeDec(rdr, "SalePrice");
-                                                v.Matched     = true;
-                                            }
-                                        }
-                                    }
+                                    string p2 = productCode + "-%-" + size;
+                                    var e2 = skuEntries.Find(e => SqlLike(e.Sku, p2));
+                                    if (e2.Variant != null) { hit = e2.Variant; found = true; }
                                 }
+                            }
+
+                            if (found && hit != null)
+                            {
+                                v.VariantId   = hit.VariantId;
+                                v.SKUNumber   = hit.SKUNumber;
+                                v.ProductName = hit.ProductName;
+                                v.Color       = hit.Color;
+                                // Prefer the size extracted from the BOL text ("Size 41") over
+                                // the DB column value, which may differ.  Fall back to DB only
+                                // when the BOL has no explicit size keyword (code-first SKUs
+                                // such as "001-Pumps-Black-36" have no "Size" token).
+                                v.Size        = !string.IsNullOrEmpty(size) ? size : hit.Size;
+                                v.SalePrice   = hit.SalePrice > 0 ? hit.SalePrice : perUnitPrice;
+                                v.Matched     = true;
                             }
 
                             extracted.Add(new
                             {
                                 OrderRef    = orderRef,
+                                TrackingNo  = trackingNo,
                                 SaleDate    = saleDate,
                                 COD         = cod,
                                 Quantity    = qty,
@@ -1479,6 +1856,25 @@ namespace Onfoot_Inventory
             {
                 return JsonConvert.SerializeObject(new { success = false, message = ex.Message, items = new List<object>(), customers = new List<object>() });
             }
+        }
+
+        // Normalizes a SKU (or BOL description) to dash-separated, no-spaces form.
+        // "Flat - 033 - Black - Size - 38" → "Flat-033-Black-38"
+        // "001-Pumps-Black-36"             → "001-Pumps-Black-36"  (unchanged)
+        private static string NormalizeSKU(string s)
+        {
+            s = Regex.Replace(s, @"\s*-\s*",         "-"); // collapse spaces around dashes
+            s = Regex.Replace(s, @"-?[Ss]ize[\s-]*", "-"); // remove "Size" keyword
+            s = Regex.Replace(s, @"\s+",             "-"); // remaining spaces → dash
+            s = Regex.Replace(s, @"-{2,}",           "-").Trim('-'); // dedup & trim
+            return s;
+        }
+
+        // Converts a SQL LIKE pattern (% = any chars, _ = any single char) to a regex match
+        private static bool SqlLike(string value, string pattern)
+        {
+            string regex = "^" + Regex.Escape(pattern).Replace(@"\%", ".*").Replace(@"\_", ".") + "$";
+            return Regex.IsMatch(value, regex, RegexOptions.IgnoreCase);
         }
 
         private static string Fail(string msg) =>

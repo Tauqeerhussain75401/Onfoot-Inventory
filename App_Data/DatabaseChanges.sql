@@ -131,4 +131,59 @@ BEGIN
 END
 GO
 
+-- ============================================================
+-- Sales.BOLFile  (original filename of the uploaded BOL PDF)
+-- ============================================================
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'Sales' AND COLUMN_NAME = 'BOLFile')
+BEGIN
+    ALTER TABLE Sales ADD BOLFile NVARCHAR(500) NULL;
+END
+GO
+
+-- ============================================================
+-- Sales.TrackingNo  (courier tracking number from the BOL)
+-- ============================================================
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'Sales' AND COLUMN_NAME = 'TrackingNo')
+BEGIN
+    ALTER TABLE Sales ADD TrackingNo NVARCHAR(200) NULL;
+END
+GO
+
+-- ============================================================
+-- Sales.OrderRef  (order reference at sale-header level)
+-- ============================================================
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'Sales' AND COLUMN_NAME = 'OrderRef')
+BEGIN
+    ALTER TABLE Sales ADD OrderRef NVARCHAR(200) NULL;
+END
+GO
+
+-- ============================================================
+-- Drop Sales.BillOfLadingFile  (legacy column, superseded by BOLFile)
+-- ============================================================
+IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'Sales' AND COLUMN_NAME = 'BillOfLadingFile')
+BEGIN
+    ALTER TABLE Sales DROP COLUMN BillOfLadingFile;
+END
+GO
+
+-- ============================================================
+-- Drop SaleItems.OrderRef  (moved to Sales header level)
+-- ============================================================
+IF EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'SaleItems' AND COLUMN_NAME = 'OrderRef')
+BEGIN
+    ALTER TABLE SaleItems DROP COLUMN OrderRef;
+END
+GO
+
 PRINT 'DatabaseChanges applied successfully.';

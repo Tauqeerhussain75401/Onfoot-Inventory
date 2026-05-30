@@ -185,12 +185,13 @@
                             <th style="width:5%">#</th>
                             <th style="width:12%">Bill No</th>
                             <th style="width:9%">Platform</th>
-                            <th style="width:11%">Courier</th>
+                            <th style="width:10%">Courier</th>
                             <th style="width:9%">Date</th>
-                            <th style="width:8%">Items</th>
-                            <th style="width:6%">Qty</th>
-                            <th style="width:11%">Amount</th>
-                            <th style="width:9%">Status</th>
+                            <th style="width:7%">Items</th>
+                            <th style="width:5%">Qty</th>
+                            <th style="width:10%">Amount</th>
+                            <th style="width:8%">Status</th>
+                            <th style="width:8%">Source</th>
                             <th style="width:10%">Actions</th>
                         </tr>
                     </thead>
@@ -212,7 +213,7 @@
         <div class="modal-dialog modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="fas fa-receipt me-2"></i>New Sale</h5>
+                    <h5 class="modal-title"><i class="fas fa-file-pdf me-2"></i>BOL Sale Entry</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -226,16 +227,17 @@
                             </select>
                         </div>
                         <div class="col-md-3">
+                            <label class="form-label">Courier</label>
+                            <select id="ddlBOLCourier" class="form-select">
+                            </select>
+                        </div>
+                        <div class="col-md-3">
                             <label class="form-label">Bill Number <span class="text-danger">*</span></label>
-                            <input type="text" id="txtBillNumber" class="form-control" placeholder="e.g. BILL-001" maxlength="100" />
+                            <input type="text" id="txtBillNumber" class="form-control" placeholder="Auto-filled or enter manually" maxlength="100" />
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">Sale Date <span class="text-danger">*</span></label>
                             <input type="date" id="txtSaleDate" class="form-control" />
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Notes</label>
-                            <input type="text" id="txtNotes" class="form-control" placeholder="Optional notes" maxlength="500" />
                         </div>
                     </div>
 
@@ -262,17 +264,9 @@
                         <div class="input-group sku-search-row">
                             <span class="input-group-text"><i class="fas fa-search"></i></span>
                             <input type="text" id="txtSearchSKU" class="form-control form-control-sm"
-                                   placeholder="Search order ID, product, SKU — or enter exact SKU to add"
-                                   oninput="filterSaleItems()"
-                                   onkeydown="if(event.key==='Enter'){searchSKU();return false;}" />
-                            <button class="btn btn-primary btn-sm" type="button" onclick="searchSKU()" title="Add item by exact SKU">
-                                <i class="fas fa-plus me-1"></i> Add SKU
-                            </button>
-                            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="$('#txtSearchSKU').val('');filterSaleItems();" title="Clear">
-                                <i class="fas fa-times"></i>
-                            </button>
+                                   placeholder="Search order ID, SKU, tracking..."
+                                   oninput="filterSaleItems()" />
                         </div>
-                        <div id="skuSearchResult" class="mt-1"></div>
                     </div>
 
                     <!-- Sale Items Table -->
@@ -280,22 +274,22 @@
                         <table class="table table-sm table-bordered sale-items-table mb-1" id="tblSaleItems">
                             <thead class="table-primary">
                                 <tr>
-                                    <th style="width:35px">#</th>
-                                    <th style="width:90px">Order ID</th>
-                                    <th style="width:80px">Product</th>
-                                    <th style="width:200px">SKU</th>
-                                    <th style="width:70px">Color</th>
-                                    <th style="width:55px">Size</th>
-                                    <th style="width:70px" class="text-center">Qty</th>
+                                    <th style="width:35px" class="text-center">#</th>
+                                    <th style="width:95px">Order ID</th>
+                                    <th style="width:115px">Customer</th>
+                                    <th style="width:120px">Tracking No</th>
+                                    <th style="width:185px">SKU</th>
+                                    <th style="width:50px" class="text-center">Size</th>
+                                    <th style="width:55px">Qty</th>
                                     <th style="width:110px">Sale Price</th>
-                                    <th style="width:100px">Total</th>
+                                    <th style="width:95px">Total</th>
                                     <th style="width:40px"></th>
                                 </tr>
                             </thead>
                             <tbody id="saleItemsBody">
                                 <tr id="noItemsRow">
                                     <td colspan="10" class="text-center text-muted py-3">
-                                        <i class="fas fa-inbox me-1"></i> No items added. Search SKU or upload BOL.
+                                        <i class="fas fa-inbox me-1"></i> No items added. Upload BOL to get started.
                                     </td>
                                 </tr>
                             </tbody>
@@ -311,13 +305,19 @@
                     </div>
 
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-1"></i> Cancel
-                    </button>
-                    <button type="button" id="btnSaveSale" class="btn btn-primary" onclick="saveSale()">
-                        <i class="fas fa-save me-1"></i> Save Sale
-                    </button>
+                <div class="modal-footer flex-column align-items-stretch gap-2">
+                    <div id="bolSaveError" class="alert alert-danger py-2 mb-0 d-none" style="font-size:0.83rem;">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        <span id="bolSaveErrorMsg"></span>
+                    </div>
+                    <div class="d-flex gap-2 justify-content-end w-100">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            <i class="fas fa-times me-1"></i> Cancel
+                        </button>
+                        <button type="button" id="btnSaveSale" class="btn btn-primary" onclick="saveSale()">
+                            <i class="fas fa-save me-1"></i> Save Sale
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -503,13 +503,13 @@
                             <thead class="table-success">
                                 <tr style="font-size:0.95rem;">
                                     <th style="width:30px">#</th>
-                                    <th style="width:150px">Order ID <span class="text-danger">*</span></th>
-                                    <th style="width:220px">SKU</th>
-                                    <th style="width:55px">Color</th>
-                                    <th style="width:55px">Size</th>
+                                    <th style="width:115px">Order ID <span class="text-danger">*</span></th>
+                                    <th style="width:185px">SKU</th>
+                                    <th style="width:120px">Tracking No</th>
+                                    <th style="width:50px">Size</th>
                                     <th style="width:55px" class="text-center">Qty</th>
                                     <th style="width:120px">Sale Price</th>
-                                    <th style="width:100px">Total</th>
+                                    <th style="width:90px">Total</th>
                                     <th style="width:25px"></th>
                                 </tr>
                             </thead>
@@ -575,6 +575,10 @@
                             <label class="form-label">Notes</label>
                             <input type="text" id="txtEditNotes" class="form-control" maxlength="500" />
                         </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Order ID</label>
+                            <input type="text" id="txtEditOrderId" class="form-control" maxlength="200" />
+                        </div>
                     </div>
 
                     <hr class="my-2" />
@@ -629,7 +633,6 @@
                             <thead class="table-warning">
                                 <tr style="font-size:0.95rem;">
                                     <th style="width:30px">#</th>
-                                    <th style="width:150px">Order ID</th>
                                     <th style="width:220px">SKU</th>
                                     <th style="width:55px">Color</th>
                                     <th style="width:55px">Size</th>
@@ -640,7 +643,7 @@
                                 </tr>
                             </thead>
                             <tbody id="editSaleItemsBody">
-                                <tr><td colspan="9" class="text-center py-3"><i class="fas fa-spinner fa-spin text-warning"></i></td></tr>
+                                <tr><td colspan="8" class="text-center py-3"><i class="fas fa-spinner fa-spin text-warning"></i></td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -682,6 +685,7 @@
         var currentBillNumber = '';
         var cancelSaleId      = 0;
         var bolCustomers    = [];   // customers extracted from uploaded BOL
+        var bolFileName     = '';   // original filename of the uploaded BOL PDF
 
         var pkFmt = { minimumFractionDigits: 2 };
 
@@ -712,10 +716,10 @@
                 scrollY:        '520px',
                 scrollCollapse: false,
                 columnDefs:  [
-                    { orderable: false, targets: [0, 9] },
-                    { className: 'text-center', targets: [0, 5, 6, 8, 9] }
+                    { orderable: false, targets: [0, 10] },
+                    { className: 'text-center', targets: [0, 5, 6, 8, 9, 10] }
                 ],
-                order: [[4, 'desc']],
+                order: [],
                 language: {
                     search:            '',
                     searchPlaceholder: 'Search...',
@@ -843,6 +847,9 @@
                         var stBadge = s.Status === 'Completed'
                             ? '<span class="badge-active">Completed</span>'
                             : '<span class="badge-inactive">Cancelled</span>';
+                        var srcBadge = s.SaleSource === 'BOL'
+                            ? '<span class="badge rounded-pill" style="background:#dbeafe;color:#1d4ed8;font-size:0.7rem;font-weight:600;padding:3px 8px;">BOL</span>'
+                            : '<span class="badge rounded-pill" style="background:#f3f4f6;color:#374151;font-size:0.7rem;font-weight:600;padding:3px 8px;">Manual</span>';
 
                         var actions = '<div class="sales-action-wrap">'
                             + '<button class="btn-grid-view btn-view" onclick="viewSale(' + s.SaleId + ')" title="View Sale"><i class="fas fa-eye"></i></button>';
@@ -862,6 +869,7 @@
                             s.TotalQty,
                             'Rs. ' + parseFloat(s.TotalAmount).toLocaleString('en-PK', pkFmt),
                             stBadge,
+                            srcBadge,
                             actions
                         ]);
                     });
@@ -897,16 +905,42 @@
         function openAddSaleModal() {
             saleItems = [];
             renderSaleItems();
-            $('#txtBillNumber, #txtNotes').val('');
+            $('#txtBillNumber').val('');
             bolCustomers = [];
-            $('#txtSaleDate').val(new Date().toISOString().split('T')[0]);
+            var today = new Date().toISOString().split('T')[0];
+            $('#txtSaleDate').val(today);
             $('#txtSearchSKU').val('');
             $('#skuSearchResult').html('');
             $('#bolStatus').html('');
             $('#bolFileInput').val('');
+            bolFileName = '';
+            $('#bolSaveError').addClass('d-none');
             loadBOLMarketplaces();
+            loadBOLCouriers();
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/GetNextBillNumber',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                data: JSON.stringify({ saleDate: today }),
+                success: function (r) { $('#txtBillNumber').val(JSON.parse(r.d)); }
+            });
             new bootstrap.Modal(document.getElementById('saleModal')).show();
-            setTimeout(function() { $('#txtBillNumber').focus(); }, 400);
+        }
+
+        function loadBOLCouriers() {
+            $.ajax({
+                type: 'POST', url: 'Sales.aspx/GetCouriers',
+                contentType: 'application/json; charset=utf-8', dataType: 'json',
+                success: function (res) {
+                    var couriers = JSON.parse(res.d);
+                    var $sel = $('#ddlBOLCourier').empty();
+                    $.each(couriers, function (i, c) {
+                        $sel.append('<option value="' + c.CourierId + '">' + escHtml(c.CourierName) + '</option>');
+                    });
+                },
+                error: function () {
+                    $('#ddlBOLCourier').html('<option value="">Failed to load</option>');
+                }
+            });
         }
 
         /* ============================================================ SKU SEARCH */
@@ -956,7 +990,8 @@
                 qty:         1,
                 salePrice:   variant.SalePrice,
                 matched:     true,
-                orderRef:    ''
+                orderRef:    '',
+                trackingNo:  ''
             });
             renderSaleItems();
             $('#txtSearchSKU').val('');
@@ -971,127 +1006,110 @@
 
         function updateItemQty(idx, val) {
             saleItems[idx].qty = parseInt(val) || 1;
+            refreshRowTotal(idx);
             recalcTotals();
         }
 
         function updateItemPrice(idx, val) {
             saleItems[idx].salePrice = parseFloat(val) || 0;
+            refreshRowTotal(idx);
             recalcTotals();
         }
 
-        function renderSaleItems() {
+        function refreshRowTotal(idx) {
+            var it = saleItems[idx];
+            var lineTotal = it.qty * it.salePrice;
+            $('#saleItemsBody tr[data-idx="' + idx + '"] .row-total')
+                .text('Rs. ' + lineTotal.toLocaleString('en-PK', pkFmt));
+        }
+
+        function renderSaleItems(customList) {
             var $body = $('#saleItemsBody');
-            if (saleItems.length === 0) {
-                $body.html('<tr id="noItemsRow"><td colspan="10" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i> No items added. Search SKU or upload BOL.</td></tr>');
-                $('#lblTotalQty').text('0');
-                $('#lblGrandTotal').text('Rs. 0.00');
+            var isFiltered = (customList !== undefined);
+            var entries = isFiltered
+                ? customList
+                : saleItems.map(function(it, i) { return { item: it, idx: i }; });
+
+            if (entries.length === 0) {
+                var msg = saleItems.length === 0
+                    ? 'No items added. Upload BOL to get started.'
+                    : 'No items match your search.';
+                $body.html('<tr id="noItemsRow"><td colspan="10" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i> ' + msg + '</td></tr>');
+                if (!isFiltered) { $('#lblTotalQty').text('0'); $('#lblGrandTotal').text('Rs. 0.00'); }
                 return;
             }
 
-            var html = '';
-            var lastOrderRef = null;
+            // Build orderRef → customer name lookup from bolCustomers
+            var custByOrderRef = {};
+            bolCustomers.forEach(function(c) {
+                if (c.OrderRef && !custByOrderRef[c.OrderRef])
+                    custByOrderRef[c.OrderRef] = c.Name || '';
+            });
 
-            saleItems.forEach(function (it, idx) {
-                var lineTotal  = (it.qty * it.salePrice).toFixed(2);
-                var rowClass   = (it.matched === false) ? 'table-warning' : '';
-                var skuDisplay = it.matched === false
-                    ? '<code style="font-size:0.76rem;color:#b45309;">' + escHtml(it.sku) + ' ⚠</code>'
-                    : '<code style="font-size:0.76rem;">' + escHtml(it.sku) + '</code>';
+            // Group entries by orderRef (preserving insertion order)
+            var groups = [], seen = {};
+            entries.forEach(function(e) {
+                var key = e.item.orderRef || '';
+                if (!seen.hasOwnProperty(key)) { seen[key] = []; groups.push(seen[key]); }
+                seen[key].push(e);
+            });
 
-                // Show Order ID only on first occurrence
-                var orderKey  = it.orderRef || '';
-                var orderCell = (orderKey !== lastOrderRef)
-                    ? '<strong style="font-size:0.82rem;">' + escHtml(orderKey || '—') + '</strong>'
-                    : '';
-                lastOrderRef = orderKey;
-                var orderData = 'data-ref="' + escHtml(orderKey) + '"';
+            var html = '', rowNum = 1;
+            groups.forEach(function(group) {
+                var gs = group.length;
+                group.forEach(function(e, gi) {
+                    var it  = e.item, idx = e.idx;
+                    var lineTotal  = (it.qty * it.salePrice).toFixed(2);
+                    var rowClass   = (it.matched === false) ? 'table-warning' : '';
+                    var skuCopyBtn = '<button type="button" onclick="copySkuText(\'' + escJs(it.sku) + '\',this)" title="Copy SKU" '
+                        + 'style="border:none;background:none;padding:0 0 0 4px;cursor:pointer;color:#6b7280;font-size:0.72rem;vertical-align:middle;">'
+                        + '<i class="fas fa-copy"></i></button>';
+                    var skuDisplay = it.matched === false
+                        ? '<code style="font-size:0.76rem;color:#b45309;">' + escHtml(it.sku) + '</code>'
+                          + ' <i class="fas fa-exclamation-triangle" style="color:#b45309;font-size:0.68rem;" title="SKU not matched in inventory"></i>'
+                          + skuCopyBtn
+                        : '<code style="font-size:0.76rem;">' + escHtml(it.sku) + '</code>' + skuCopyBtn;
 
-                html += '<tr class="' + rowClass + '">'
-                      + '<td class="text-center text-muted" style="font-size:0.78rem;">' + (idx + 1) + '</td>'
-                      + '<td style="white-space:nowrap;" ' + orderData + '>' + orderCell + '</td>'
-                      + '<td style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escHtml(it.productName) + '">'
-                      +     '<small>' + escHtml(it.productName) + '</small></td>'
-                      + '<td>' + skuDisplay + '</td>'
-                      + '<td>' + (it.color ? '<span class="badge bg-secondary">' + escHtml(it.color) + '</span>' : '—') + '</td>'
-                      + '<td class="text-center">' + escHtml(it.size) + '</td>'
-                      + '<td><input type="number" class="form-control form-control-sm text-center" min="1" value="' + it.qty + '" onchange="updateItemQty(' + idx + ',this.value)" style="width:58px" /></td>'
-                      + '<td><div class="input-group input-group-sm"><span class="input-group-text">Rs.</span><input type="number" class="form-control" min="0" step="0.01" value="' + it.salePrice + '" onchange="updateItemPrice(' + idx + ',this.value)" /></div></td>'
-                      + '<td class="fw-semibold">Rs. ' + parseFloat(lineTotal).toLocaleString('en-PK', pkFmt) + '</td>'
-                      + '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeSaleItem(' + idx + ')"><i class="fas fa-times"></i></button></td>'
-                      + '</tr>';
+                    var rs = (gi === 0 && gs > 1) ? ' rowspan="' + gs + '"' : '';
+
+                    html += '<tr class="' + rowClass + '" data-idx="' + idx + '">';
+                    html += '<td class="text-center text-muted" style="font-size:0.78rem;">' + rowNum + '</td>';
+
+                    if (gi === 0) {
+                        var custName = custByOrderRef[it.orderRef || ''] || '';
+                        html += '<td' + rs + ' style="vertical-align:middle;white-space:nowrap;"><strong style="font-size:0.82rem;">' + escHtml(it.orderRef || '—') + '</strong></td>';
+                        html += '<td' + rs + ' style="vertical-align:middle;font-size:0.82rem;">' + (custName ? escHtml(custName) : '<span class="text-muted">—</span>') + '</td>';
+                        html += '<td' + rs + ' style="vertical-align:middle;font-size:0.82rem;">' + escHtml(it.trackingNo || '—') + '</td>';
+                    }
+
+                    html += '<td>' + skuDisplay + '</td>';
+                    html += '<td class="text-center">' + escHtml(it.size) + '</td>';
+                    html += '<td class="text-center"><input type="number" class="form-control form-control-sm text-center" min="1" value="' + it.qty + '" oninput="updateItemQty(' + idx + ',this.value)" style="width:58px" /></td>';
+                    html += '<td><div class="input-group input-group-sm"><span class="input-group-text">Rs.</span><input type="number" class="form-control" min="0" step="0.01" value="' + it.salePrice + '" oninput="updateItemPrice(' + idx + ',this.value)" /></div></td>';
+                    html += '<td class="fw-semibold row-total">Rs. ' + parseFloat(lineTotal).toLocaleString('en-PK', pkFmt) + '</td>';
+                    html += '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeSaleItem(' + idx + ')"><i class="fas fa-times"></i></button></td>';
+                    html += '</tr>';
+                    rowNum++;
+                });
             });
 
             $body.html(html);
-            recalcTotals();
-        }
-
-        function filterSaleItems() {
-            var q = $.trim($('#txtItemSearch').val()).toLowerCase();
-            if (!q) { renderSaleItems(); return; }
-
-            var lastOrderRef = null;
-            $('#saleItemsBody tr').each(function () {
-                var $tr      = $(this);
-                var product  = ($tr.find('td:eq(2)').text()  || '').toLowerCase();
-                var sku      = ($tr.find('td:eq(3)').text()  || '').toLowerCase();
-                var orderId  = ($tr.find('td:eq(1)').text()  || '').toLowerCase();
-                var color    = ($tr.find('td:eq(4)').text()  || '').toLowerCase();
-                var size     = ($tr.find('td:eq(5)').text()  || '').toLowerCase();
-
-                var matches = product.indexOf(q) >= 0
-                           || sku.indexOf(q)     >= 0
-                           || orderId.indexOf(q) >= 0
-                           || color.indexOf(q)   >= 0
-                           || size.indexOf(q)    >= 0;
-
-                $tr.toggle(matches);
-
-                if (matches) {
-                    // Re-manage Order ID visibility: show only on first visible row per order
-                    var $orderCell = $tr.find('td:eq(1)');
-                    var currentRef = $orderCell.data('ref') || $orderCell.text().trim();
-                    $orderCell.data('ref', currentRef);
-
-                    if (currentRef && currentRef !== lastOrderRef) {
-                        $orderCell.html('<strong style="font-size:0.82rem;">' + escHtml(currentRef) + '</strong>');
-                        lastOrderRef = currentRef;
-                    } else if (currentRef === lastOrderRef) {
-                        $orderCell.html('');
-                    }
-                }
-            });
+            if (!isFiltered) recalcTotals();
         }
 
         function filterSaleItems() {
             var q = $.trim($('#txtSearchSKU').val()).toLowerCase();
             if (!q) { renderSaleItems(); return; }
-
-            var lastRef = null;
-            $('#saleItemsBody tr').each(function () {
-                var $tr     = $(this);
-                var orderId = ($tr.find('td:eq(1)').attr('data-ref') || '').toLowerCase();
-                var product = ($tr.find('td:eq(2)').text() || '').toLowerCase();
-                var sku     = ($tr.find('td:eq(3)').text() || '').toLowerCase();
-                var color   = ($tr.find('td:eq(4)').text() || '').toLowerCase();
-
-                var match = orderId.indexOf(q) >= 0
-                         || product.indexOf(q) >= 0
-                         || sku.indexOf(q)     >= 0
-                         || color.indexOf(q)   >= 0;
-
-                $tr.toggle(match);
-
-                if (match) {
-                    var ref = $tr.find('td:eq(1)').attr('data-ref') || '';
-                    var $cell = $tr.find('td:eq(1)');
-                    if (ref && ref !== lastRef) {
-                        $cell.html('<strong style="font-size:0.82rem;">' + escHtml(ref) + '</strong>');
-                        lastRef = ref;
-                    } else {
-                        $cell.html('');
-                    }
+            var filtered = [];
+            saleItems.forEach(function(it, idx) {
+                if ((it.orderRef   || '').toLowerCase().indexOf(q) >= 0
+                 || (it.sku        || '').toLowerCase().indexOf(q) >= 0
+                 || (it.trackingNo || '').toLowerCase().indexOf(q) >= 0
+                 || (it.size       || '').toLowerCase().indexOf(q) >= 0) {
+                    filtered.push({ item: it, idx: idx });
                 }
             });
+            renderSaleItems(filtered);
         }
 
         function recalcTotals() {
@@ -1111,7 +1129,10 @@
 
         // Wire file input change
         document.getElementById('bolFileInput').addEventListener('change', function () {
-            if (this.files && this.files[0]) processBOL(this.files[0]);
+            if (!this.files || !this.files[0]) return;
+            var file = this.files[0];
+            bolFileName = file.name;
+            processBOL(file);
         });
 
         async function processBOL(file) {
@@ -1173,6 +1194,9 @@
                             });
                         }
 
+                        // Clear previous upload before loading new PDF data
+                        saleItems = [];
+
                         // Aggregate items: same variant → add qty
                         var added = 0, merged = 0, unmatched = 0;
                         items.forEach(function (it) {
@@ -1195,7 +1219,8 @@
                                 qty:         it.Quantity,
                                 salePrice:   it.SalePrice,
                                 matched:     it.Matched,
-                                orderRef:    it.OrderRef
+                                orderRef:    it.OrderRef,
+                                trackingNo:  it.TrackingNo || ''
                             });
                             added++;
                         });
@@ -1234,25 +1259,48 @@
             if (!saleDate) { shakeField('#txtSaleDate');   showToast('Sale Date is required.', 'warning');   return; }
             if (saleItems.length === 0) { showToast('Add at least one item.', 'warning'); return; }
 
-            var sale = {
-                SaleId:     0,
-                BillNumber: billNo,
-                Platform:   platform,
-                SaleDate:   saleDate,
-                Status:     'Completed',
-                Notes:      $.trim($('#txtNotes').val()),
-                SaleSource: 'BOL'
-            };
+            var unmatched = saleItems.filter(function(it) { return it.matched === false; });
+            if (unmatched.length > 0) {
+                var msg = unmatched.length + ' SKU' + (unmatched.length > 1 ? 's are' : ' is') +
+                          ' not matched in inventory. Resolve all unmatched items (highlighted in yellow) before saving.';
+                $('#bolSaveErrorMsg').text(msg);
+                $('#bolSaveError').removeClass('d-none');
+                showToast(msg, 'danger');
+                return;
+            }
+            $('#bolSaveError').addClass('d-none');
 
-            var itemsPayload = saleItems.map(function(it) {
+            var courierId = parseInt($('#ddlBOLCourier').val()) || null;
+
+            // Group saleItems by orderRef — one Sale per group
+            var groupMap   = {};
+            var groupOrder = [];
+            saleItems.forEach(function(it) {
+                var key = it.orderRef || '';
+                if (!groupMap[key]) { groupMap[key] = []; groupOrder.push(key); }
+                groupMap[key].push(it);
+            });
+
+            var groupsPayload = groupOrder.map(function(orderRef) {
+                var items      = groupMap[orderRef];
+                var trackingNo = '';
+                items.forEach(function(it) {
+                    if (it.trackingNo && it.trackingNo !== trackingNo) trackingNo = it.trackingNo;
+                });
                 return {
-                    VariantId:   it.variantId,
-                    SKUNumber:   it.sku,
-                    ProductName: it.productName,
-                    Color:       it.color,
-                    Size:        it.size,
-                    Quantity:    it.qty,
-                    SalePrice:   it.salePrice
+                    OrderRef:   orderRef,
+                    TrackingNo: trackingNo,
+                    Items: items.map(function(it) {
+                        return {
+                            VariantId:   it.variantId,
+                            SKUNumber:   it.sku,
+                            ProductName: it.productName,
+                            Color:       it.color,
+                            Size:        it.size,
+                            Quantity:    it.qty,
+                            SalePrice:   it.salePrice
+                        };
+                    })
                 };
             });
 
@@ -1260,9 +1308,19 @@
             $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Saving...');
 
             $.ajax({
-                type:'POST', url:'Sales.aspx/SaveSale',
+                type:'POST', url:'Sales.aspx/SaveBOLSales',
                 contentType:'application/json; charset=utf-8', dataType:'json',
-                data: JSON.stringify({ sale: sale, itemsJson: JSON.stringify(itemsPayload), customersJson: JSON.stringify(bolCustomers) }),
+                data: JSON.stringify({
+                    platform:       platform,
+                    saleDate:       saleDate,
+                    courierId:      courierId,
+                    baseBillNumber: billNo,
+                    groupsJson:     JSON.stringify(groupsPayload),
+                    customersJson:  JSON.stringify(bolCustomers),
+                    bolFileName:    bolFileName,
+                    saleSource:     'BOL',
+                    notes:          null
+                }),
                 success: function(res) {
                     var r = JSON.parse(res.d);
                     if (r.success) {
@@ -1270,11 +1328,27 @@
                         showToast(r.message, 'success');
                         var _fd = getFilterDates(); loadSales(_fd.startDate, _fd.endDate); loadStats(_fd.startDate, _fd.endDate);
                     } else {
+                        $('#bolSaveErrorMsg').text(r.message);
+                        $('#bolSaveError').removeClass('d-none');
                         showToast(r.message, 'danger');
                     }
                 },
-                error: function() { showToast('An error occurred.', 'danger'); },
-                complete: function() { $btn.prop('disabled', false).html('<i class="fas fa-save me-1"></i> Save Sale'); }
+                error: function(xhr) {
+                    var detail = '';
+                    try {
+                        var parsed = JSON.parse(xhr.responseText);
+                        detail = parsed.Message || parsed.message || xhr.responseText.substring(0, 300);
+                    } catch(e) {
+                        detail = xhr.responseText ? xhr.responseText.substring(0, 300) : 'No details';
+                    }
+                    var msg = 'Server error (' + xhr.status + '): ' + detail;
+                    $('#bolSaveErrorMsg').text(msg);
+                    $('#bolSaveError').removeClass('d-none');
+                    showToast('Server error ' + xhr.status, 'danger');
+                },
+                complete: function() {
+                    $btn.prop('disabled', false).html('<i class="fas fa-save me-1"></i> Save Sale');
+                }
             });
         }
 
@@ -1309,14 +1383,19 @@
                         + '<div class="col-auto ms-auto">'
                         + (cancelled ? '<span class="badge bg-danger">Cancelled</span>' : '<span class="badge bg-success">Completed</span>')
                         + '</div></div>';
+                    if (s.OrderRef || s.TrackingNo) {
+                        infoHtml += '<div class="d-flex gap-3 mb-2 flex-wrap">';
+                        if (s.OrderRef)   infoHtml += '<span class="text-muted small"><i class="fas fa-hashtag me-1"></i><strong>Order ID:</strong> ' + escHtml(s.OrderRef) + '</span>';
+                        if (s.TrackingNo) infoHtml += '<span class="text-muted small"><i class="fas fa-barcode me-1"></i><strong>Tracking:</strong> ' + escHtml(s.TrackingNo) + '</span>';
+                        infoHtml += '</div>';
+                    }
                     if (s.Notes) infoHtml += '<p class="text-muted small mb-2"><i class="fas fa-sticky-note me-1"></i>' + escHtml(s.Notes) + '</p>';
 
                     var tableHtml = '<div class="table-responsive"><table class="table table-sm table-bordered mb-2">'
-                        + '<thead class="table-light"><tr><th>#</th><th>Order ID</th><th>SKU</th><th>Product</th><th>Color</th><th>Size</th><th class="text-center">Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>';
+                        + '<thead class="table-light"><tr><th>#</th><th>SKU</th><th>Product</th><th>Color</th><th>Size</th><th class="text-center">Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>';
                     $.each(items, function(i, it) {
                         tableHtml += '<tr>'
                             + '<td>' + (i+1) + '</td>'
-                            + '<td style="white-space:nowrap;">' + (it.OrderRef ? '<span class="badge bg-light text-dark border" style="font-size:0.75rem;">' + escHtml(it.OrderRef) + '</span>' : '<span class="text-muted">—</span>') + '</td>'
                             + '<td><code style="font-size:0.75rem;">' + escHtml(it.SKUNumber) + '</code></td>'
                             + '<td>' + escHtml(it.ProductName) + '</td>'
                             + '<td><span class="badge bg-secondary">' + escHtml(it.Color) + '</span></td>'
@@ -1693,8 +1772,9 @@
                     size:         v.Size,
                     qty:          1,
                     salePrice:    v.SalePrice,
+                    marketStocks: v.MarketStocks || [],
                     orderRef:     '',
-                    marketStocks: v.MarketStocks || []
+                    trackingNo:   ''
                 });
                 added++;
             });
@@ -1735,19 +1815,23 @@
             if (el) el.style.borderColor = $.trim(val) ? '' : '#dc2626';
         }
 
+        function updateManualItemTrackingNo(idx, val) {
+            manualSaleItems[idx].trackingNo = val;
+        }
+
         function updateManualItemQty(idx, val) {
             manualSaleItems[idx].qty = parseInt(val) || 1;
-            refreshRowTotal(idx);
+            refreshManualRowTotal(idx);
             recalcManualTotals();
         }
 
         function updateManualItemPrice(idx, val) {
             manualSaleItems[idx].salePrice = parseFloat(val) || 0;
-            refreshRowTotal(idx);
+            refreshManualRowTotal(idx);
             recalcManualTotals();
         }
 
-        function refreshRowTotal(idx) {
+        function refreshManualRowTotal(idx) {
             var it = manualSaleItems[idx];
             var lineTotal = (it.qty * it.salePrice);
             $('#rowTotal_' + idx).text('Rs. ' + lineTotal.toLocaleString('en-PK', pkFmt));
@@ -1763,17 +1847,19 @@
             }
             var html = '';
             manualSaleItems.forEach(function (it, idx) {
-                var lineTotal   = (it.qty * it.salePrice).toFixed(2);
-                var stockHtml   = buildStockBadges(it.marketStocks);
-                var skuCell     = '<code style="font-size:0.88rem;">' + escHtml(it.sku) + '</code>'
-                                + (stockHtml ? '<br><span style="line-height:1.2;">' + stockHtml + '</span>' : '');
-                var qtyStyle    = 'font-size:0.9rem;font-weight:700;color:#1d4ed8;';
-                var orderBorder = $.trim(it.orderRef || '') ? '' : 'border-color:#dc2626;';
+                var lineTotal = (it.qty * it.salePrice).toFixed(2);
+                var stockHtml = buildStockBadges(it.marketStocks);
+                var skuCell   = '<code style="font-size:0.88rem;">' + escHtml(it.sku) + '</code>'
+                              + (stockHtml ? '<br><span style="line-height:1.2;">' + stockHtml + '</span>' : '');
+                var qtyStyle  = 'font-size:0.9rem;font-weight:700;color:#1d4ed8;';
+                var orVal     = escHtml(it.orderRef   || '');
+                var tnVal     = escHtml(it.trackingNo || '');
+                var orBorder  = $.trim(it.orderRef) ? '' : 'border-color:#dc2626;';
                 html += '<tr style="font-size:0.93rem;">'
                       + '<td class="text-center text-muted">' + (idx + 1) + '</td>'
-                      + '<td><input type="text" class="form-control" style="font-size:0.9rem;' + orderBorder + '" placeholder="Order ID *" value="' + escHtml(it.orderRef || '') + '" oninput="updateManualItemOrderRef(' + idx + ',this.value,this)" /></td>'
+                      + '<td><input type="text" class="form-control form-control-sm" style="' + orBorder + '" placeholder="Order ID" maxlength="200" value="' + orVal + '" oninput="updateManualItemOrderRef(' + idx + ',this.value,this)" /></td>'
                       + '<td>' + skuCell + '</td>'
-                      + '<td>' + (it.color ? '<span class="badge bg-secondary" style="font-size:0.8rem;">' + escHtml(it.color) + '</span>' : '—') + '</td>'
+                      + '<td><input type="text" class="form-control form-control-sm" placeholder="Tracking No" maxlength="200" value="' + tnVal + '" oninput="updateManualItemTrackingNo(' + idx + ',this.value)" /></td>'
                       + '<td class="text-center">' + escHtml(it.size) + '</td>'
                       + '<td><input type="number" class="form-control text-center" style="' + qtyStyle + '" min="1" value="' + it.qty + '" onchange="updateManualItemQty(' + idx + ',this.value)" /></td>'
                       + '<td><div class="input-group"><span class="input-group-text" style="font-size:0.88rem;">Rs.</span><input type="number" class="form-control" style="font-size:0.9rem;" min="0" step="0.01" value="' + (it.salePrice || '') + '" placeholder="0" onchange="updateManualItemPrice(' + idx + ',this.value)" /></div></td>'
@@ -1803,35 +1889,42 @@
             if (!saleDate) { shakeField('#txtManualSaleDate');     showToast('Sale Date is required.', 'warning');   return; }
             if (manualSaleItems.length === 0) { showToast('Add at least one item.', 'warning'); return; }
 
-            var missingOrderRef = manualSaleItems.some(function (it) { return !$.trim(it.orderRef); });
-            if (missingOrderRef) {
-                renderManualItems(); // re-render to highlight empty inputs in red
-                showToast('Order ID is required for all items.', 'warning');
+            // Validate Order ID required on every item
+            var missingOrder = manualSaleItems.some(function(it) { return !$.trim(it.orderRef); });
+            if (missingOrder) {
+                renderManualItems(); // re-render to show red borders
+                showToast('Order ID is required for every item.', 'warning');
                 return;
             }
 
             var courierId = $('#ddlManualCourier').val();
-            var sale = {
-                SaleId:     0,
-                BillNumber: billNo,
-                Platform:   platform,
-                SaleDate:   saleDate,
-                Status:     'Completed',
-                Notes:      null,
-                SaleSource: 'Manual',
-                CourierId:  courierId ? parseInt(courierId) : null
-            };
 
-            var itemsPayload = manualSaleItems.map(function (it) {
+            // Group items by orderRef — one Sale per group
+            var groupMap   = {};
+            var groupOrder = [];
+            manualSaleItems.forEach(function(it) {
+                var key = it.orderRef.trim();
+                if (!groupMap[key]) { groupMap[key] = []; groupOrder.push(key); }
+                groupMap[key].push(it);
+            });
+
+            var groupsPayload = groupOrder.map(function(orderRef) {
+                var items      = groupMap[orderRef];
+                var trackingNo = items[0].trackingNo || '';
                 return {
-                    VariantId:   it.variantId,
-                    SKUNumber:   it.sku,
-                    ProductName: it.productName,
-                    Color:       it.color,
-                    Size:        it.size,
-                    Quantity:    it.qty,
-                    SalePrice:   it.salePrice,
-                    OrderRef:    it.orderRef || ''
+                    OrderRef:   orderRef,
+                    TrackingNo: trackingNo,
+                    Items: items.map(function(it) {
+                        return {
+                            VariantId:   it.variantId,
+                            SKUNumber:   it.sku,
+                            ProductName: it.productName,
+                            Color:       it.color,
+                            Size:        it.size,
+                            Quantity:    it.qty,
+                            SalePrice:   it.salePrice
+                        };
+                    })
                 };
             });
 
@@ -1839,9 +1932,19 @@
             $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i> Saving...');
 
             $.ajax({
-                type: 'POST', url: 'Sales.aspx/SaveSale',
+                type: 'POST', url: 'Sales.aspx/SaveBOLSales',
                 contentType: 'application/json; charset=utf-8', dataType: 'json',
-                data: JSON.stringify({ sale: sale, itemsJson: JSON.stringify(itemsPayload), customersJson: '[]' }),
+                data: JSON.stringify({
+                    platform:       platform,
+                    saleDate:       saleDate,
+                    courierId:      courierId ? parseInt(courierId) : null,
+                    baseBillNumber: billNo,
+                    groupsJson:     JSON.stringify(groupsPayload),
+                    customersJson:  '[]',
+                    bolFileName:    null,
+                    saleSource:     'Manual',
+                    notes:          null
+                }),
                 success: function (res) {
                     var r = JSON.parse(res.d);
                     if (r.success) {
@@ -1900,8 +2003,9 @@
                             $('#txtEditBillNo').val(s.BillNumber);
                             $('#txtEditSaleDate').val(s.SaleDate);
                             $('#txtEditNotes').val(s.Notes || '');
+                            $('#txtEditOrderId').val(s.OrderRef || '');
                             editSaleItems = data.Items.map(function (it) {
-                                return { variantId: it.VariantId, sku: it.SKUNumber, productName: it.ProductName, color: it.Color, size: it.Size, qty: it.Quantity, salePrice: parseFloat(it.SalePrice), orderRef: it.OrderRef || '' };
+                                return { variantId: it.VariantId, sku: it.SKUNumber, productName: it.ProductName, color: it.Color, size: it.Size, qty: it.Quantity, salePrice: parseFloat(it.SalePrice) };
                             });
                             renderEditItems();
                             loadEditVariants();
@@ -2023,7 +2127,7 @@
             selected.forEach(function (v) {
                 if (v.StockQty <= 0) { noStock.push(v); return; }
                 if (editSaleItems.some(function (x) { return x.variantId === v.VariantId; })) { skipped++; return; }
-                editSaleItems.push({ variantId: v.VariantId, sku: v.SKUNumber, productName: v.ProductName, color: v.Color, size: v.Size, qty: 1, salePrice: v.SalePrice, orderRef: '' });
+                editSaleItems.push({ variantId: v.VariantId, sku: v.SKUNumber, productName: v.ProductName, color: v.Color, size: v.Size, qty: 1, salePrice: v.SalePrice });
                 added++;
             });
 
@@ -2048,7 +2152,7 @@
         function renderEditItems() {
             var $body = $('#editSaleItemsBody');
             if (editSaleItems.length === 0) {
-                $body.html('<tr><td colspan="9" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i> No items. Add products above.</td></tr>');
+                $body.html('<tr><td colspan="8" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i> No items. Add products above.</td></tr>');
                 $('#lblEditTotalQty').text('0'); $('#lblEditGrandTotal').text('Rs. 0.00'); $('#editItemCount').text('0');
                 return;
             }
@@ -2057,7 +2161,6 @@
                 var lineTotal = (it.qty * it.salePrice).toFixed(2);
                 html += '<tr style="font-size:0.93rem;">'
                       + '<td class="text-center text-muted">' + (idx + 1) + '</td>'
-                      + '<td><input type="text" class="form-control" style="font-size:0.9rem;" placeholder="Order ID" value="' + escHtml(it.orderRef || '') + '" oninput="updateEditItemOrderRef(' + idx + ',this.value)" /></td>'
                       + '<td><code style="font-size:0.88rem;">' + escHtml(it.sku) + '</code></td>'
                       + '<td>' + (it.color ? '<span class="badge bg-secondary" style="font-size:0.8rem;">' + escHtml(it.color) + '</span>' : '—') + '</td>'
                       + '<td class="text-center">' + escHtml(it.size) + '</td>'
@@ -2089,9 +2192,9 @@
             if (!saleDate) { shakeField('#txtEditSaleDate');     showToast('Sale Date is required.', 'warning');   return; }
             if (editSaleItems.length === 0) { showToast('Add at least one item.', 'warning'); return; }
 
-            var sale = { SaleId: editSaleId, BillNumber: billNo, Platform: platform, SaleDate: saleDate, Status: 'Completed', Notes: $.trim($('#txtEditNotes').val()) };
+            var sale = { SaleId: editSaleId, BillNumber: billNo, Platform: platform, SaleDate: saleDate, Status: 'Completed', Notes: $.trim($('#txtEditNotes').val()), OrderRef: $.trim($('#txtEditOrderId').val()) || null };
             var itemsPayload = editSaleItems.map(function (it) {
-                return { VariantId: it.variantId, SKUNumber: it.sku, ProductName: it.productName, Color: it.color, Size: it.size, Quantity: it.qty, SalePrice: it.salePrice, OrderRef: it.orderRef || '' };
+                return { VariantId: it.variantId, SKUNumber: it.sku, ProductName: it.productName, Color: it.color, Size: it.size, Quantity: it.qty, SalePrice: it.salePrice };
             });
 
             var $btn = $('#btnSaveEditSale');
@@ -2115,6 +2218,14 @@
         }
 
         /* ============================================================ HELPERS */
+        function copySkuText(sku, btn) {
+            navigator.clipboard.writeText(sku).then(function() {
+                var $i = $(btn).find('i');
+                $i.removeClass('fa-copy').addClass('fa-check');
+                setTimeout(function() { $i.removeClass('fa-check').addClass('fa-copy'); }, 1500);
+            });
+        }
+
         function shakeField(sel) {
             var $el = $(sel); $el.addClass('border-danger');
             setTimeout(function(){ $el.removeClass('border-danger'); }, 2500);
