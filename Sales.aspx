@@ -84,6 +84,15 @@
                            width:30px;height:30px;border-radius:6px;border:none;cursor:pointer;
                            background:#fee2e2;color:#dc2626;font-size:0.82rem;transition:background .15s; }
         .btn-grid-cancel:hover { background:#fecaca; }
+        .btn-fulfill   { display:inline-flex;align-items:center;justify-content:center;
+                         width:28px;height:28px;border-radius:6px;border:none;cursor:pointer;
+                         background:#dcfce7;color:#16a34a;font-size:0.82rem;transition:background .15s; }
+        .btn-fulfill:hover   { background:#bbf7d0; }
+        .btn-unfulfill { display:inline-flex;align-items:center;justify-content:center;
+                         width:28px;height:28px;border-radius:6px;border:none;cursor:pointer;
+                         background:#fee2e2;color:#9ca3af;font-size:0.82rem;transition:background .15s; }
+        .btn-unfulfill:hover { background:#fecaca; }
+        .row-unfulfilled td { background:#f3f4f6 !important; opacity:0.6; }
     </style>
 </asp:Content>
 
@@ -283,6 +292,7 @@
                                     <th style="width:55px">Qty</th>
                                     <th style="width:110px">Sale Price</th>
                                     <th style="width:95px">Total</th>
+                                    <th style="width:38px" class="text-center">Fulfill</th>
                                     <th style="width:40px"></th>
                                 </tr>
                             </thead>
@@ -510,6 +520,7 @@
                                     <th style="width:55px" class="text-center">Qty</th>
                                     <th style="width:120px">Sale Price</th>
                                     <th style="width:90px">Total</th>
+                                    <th style="width:38px" class="text-center">Fulfill</th>
                                     <th style="width:25px"></th>
                                 </tr>
                             </thead>
@@ -844,9 +855,11 @@
                     salesTable.clear();
                     $.each(rows, function(i, s) {
                         var pBadge  = '<span class="platform-badge platform-' + s.Platform.toLowerCase() + '">' + escHtml(s.Platform) + '</span>';
-                        var stBadge = s.Status === 'Completed'
-                            ? '<span class="badge-active">Completed</span>'
-                            : '<span class="badge-inactive">Cancelled</span>';
+                        var stBadge;
+                        if      (s.Status === 'Completed')    stBadge = '<span class="badge-active">Completed</span>';
+                        else if (s.Status === 'Partial')      stBadge = '<span class="badge rounded-pill" style="background:#fef3c7;color:#92400e;font-size:0.72rem;font-weight:600;padding:3px 8px;">Partial</span>';
+                        else if (s.Status === 'Unfulfilled')  stBadge = '<span class="badge rounded-pill" style="background:#fee2e2;color:#dc2626;font-size:0.72rem;font-weight:600;padding:3px 8px;">Unfulfilled</span>';
+                        else                                   stBadge = '<span class="badge-inactive">Cancelled</span>';
                         var srcBadge = s.SaleSource === 'BOL'
                             ? '<span class="badge rounded-pill" style="background:#dbeafe;color:#1d4ed8;font-size:0.7rem;font-weight:600;padding:3px 8px;">BOL</span>'
                             : '<span class="badge rounded-pill" style="background:#f3f4f6;color:#374151;font-size:0.7rem;font-weight:600;padding:3px 8px;">Manual</span>';
@@ -855,7 +868,7 @@
                             + '<button class="btn-grid-view btn-view" onclick="viewSale(' + s.SaleId + ')" title="View Sale"><i class="fas fa-eye"></i></button>';
                         if (s.HasCustomer)
                             actions += '<button class="btn-grid-cust" onclick="viewCustomer(' + s.SaleId + ')" title="Customer Info"><i class="fas fa-user"></i></button>';
-                        if (s.Status === 'Completed')
+                        if (s.Status !== 'Cancelled')
                             actions += '<button class="btn-grid-cancel btn-cancel-sale" onclick="confirmCancelSale(' + s.SaleId + ',\'' + escJs(s.BillNumber) + '\')" title="Cancel Sale"><i class="fas fa-ban"></i></button>';
                         actions += '</div>';
 
@@ -991,7 +1004,8 @@
                 salePrice:   variant.SalePrice,
                 matched:     true,
                 orderRef:    '',
-                trackingNo:  ''
+                trackingNo:  '',
+                isFulfilled: true
             });
             renderSaleItems();
             $('#txtSearchSKU').val('');
@@ -1034,7 +1048,7 @@
                 var msg = saleItems.length === 0
                     ? 'No items added. Upload BOL to get started.'
                     : 'No items match your search.';
-                $body.html('<tr id="noItemsRow"><td colspan="10" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i> ' + msg + '</td></tr>');
+                $body.html('<tr id="noItemsRow"><td colspan="11" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i> ' + msg + '</td></tr>');
                 if (!isFiltered) { $('#lblTotalQty').text('0'); $('#lblGrandTotal').text('Rs. 0.00'); }
                 return;
             }
@@ -1061,6 +1075,7 @@
                     var it  = e.item, idx = e.idx;
                     var lineTotal  = (it.qty * it.salePrice).toFixed(2);
                     var rowClass   = (it.matched === false) ? 'table-warning' : '';
+                    if (it.isFulfilled === false) rowClass += (rowClass ? ' ' : '') + 'row-unfulfilled';
                     var skuCopyBtn = '<button type="button" onclick="copySkuText(\'' + escJs(it.sku) + '\',this)" title="Copy SKU" '
                         + 'style="border:none;background:none;padding:0 0 0 4px;cursor:pointer;color:#6b7280;font-size:0.72rem;vertical-align:middle;">'
                         + '<i class="fas fa-copy"></i></button>';
@@ -1084,9 +1099,14 @@
 
                     html += '<td>' + skuDisplay + '</td>';
                     html += '<td class="text-center">' + escHtml(it.size) + '</td>';
-                    html += '<td class="text-center"><input type="number" class="form-control form-control-sm text-center" min="1" value="' + it.qty + '" oninput="updateItemQty(' + idx + ',this.value)" style="width:58px" /></td>';
-                    html += '<td><div class="input-group input-group-sm"><span class="input-group-text">Rs.</span><input type="number" class="form-control" min="0" step="0.01" value="' + it.salePrice + '" oninput="updateItemPrice(' + idx + ',this.value)" /></div></td>';
+                    var inputDis = it.isFulfilled === false ? ' disabled' : '';
+                    html += '<td class="text-center"><input type="number" class="form-control form-control-sm text-center" min="1" value="' + it.qty + '" oninput="updateItemQty(' + idx + ',this.value)" style="width:58px"' + inputDis + ' /></td>';
+                    html += '<td><div class="input-group input-group-sm"><span class="input-group-text">Rs.</span><input type="number" class="form-control" min="0" step="0.01" value="' + it.salePrice + '" oninput="updateItemPrice(' + idx + ',this.value)"' + inputDis + ' /></div></td>';
                     html += '<td class="fw-semibold row-total">Rs. ' + parseFloat(lineTotal).toLocaleString('en-PK', pkFmt) + '</td>';
+                    var fulfillBtn = it.isFulfilled !== false
+                        ? '<button type="button" class="btn-fulfill" onclick="toggleFulfillment(' + idx + ')" title="Mark as Unfulfilled"><i class="fas fa-check-circle"></i></button>'
+                        : '<button type="button" class="btn-unfulfill" onclick="toggleFulfillment(' + idx + ')" title="Mark as Fulfilled"><i class="fas fa-ban"></i></button>';
+                    html += '<td class="text-center">' + fulfillBtn + '</td>';
                     html += '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeSaleItem(' + idx + ')"><i class="fas fa-times"></i></button></td>';
                     html += '</tr>';
                     rowNum++;
@@ -1110,6 +1130,16 @@
                 }
             });
             renderSaleItems(filtered);
+        }
+
+        function toggleFulfillment(idx) {
+            saleItems[idx].isFulfilled = saleItems[idx].isFulfilled !== false ? false : true;
+            renderSaleItems();
+        }
+
+        function toggleManualFulfillment(idx) {
+            manualSaleItems[idx].isFulfilled = manualSaleItems[idx].isFulfilled !== false ? false : true;
+            renderManualItems();
         }
 
         function recalcTotals() {
@@ -1220,7 +1250,8 @@
                                 salePrice:   it.SalePrice,
                                 matched:     it.Matched,
                                 orderRef:    it.OrderRef,
-                                trackingNo:  it.TrackingNo || ''
+                                trackingNo:  it.TrackingNo || '',
+                                isFulfilled: true
                             });
                             added++;
                         });
@@ -1298,7 +1329,8 @@
                             Color:       it.color,
                             Size:        it.size,
                             Quantity:    it.qty,
-                            SalePrice:   it.salePrice
+                            SalePrice:   it.salePrice,
+                            IsFulfilled: it.isFulfilled !== false
                         };
                     })
                 };
@@ -1381,7 +1413,10 @@
                         + (s.CourierName ? '<div class="col-auto"><span class="badge bg-secondary"><i class="fas fa-truck me-1"></i>' + escHtml(s.CourierName) + '</span></div>' : '')
                         + '<div class="col-auto text-muted small pt-1"><i class="fas fa-calendar me-1"></i>' + s.SaleDate + '</div>'
                         + '<div class="col-auto ms-auto">'
-                        + (cancelled ? '<span class="badge bg-danger">Cancelled</span>' : '<span class="badge bg-success">Completed</span>')
+                        + (s.Status === 'Cancelled'   ? '<span class="badge bg-danger">Cancelled</span>'
+                         : s.Status === 'Partial'     ? '<span class="badge" style="background:#fef3c7;color:#92400e;">Partial</span>'
+                         : s.Status === 'Unfulfilled' ? '<span class="badge bg-secondary">Unfulfilled</span>'
+                         :                              '<span class="badge bg-success">Completed</span>')
                         + '</div></div>';
                     if (s.OrderRef || s.TrackingNo) {
                         infoHtml += '<div class="d-flex gap-3 mb-2 flex-wrap">';
@@ -1392,9 +1427,13 @@
                     if (s.Notes) infoHtml += '<p class="text-muted small mb-2"><i class="fas fa-sticky-note me-1"></i>' + escHtml(s.Notes) + '</p>';
 
                     var tableHtml = '<div class="table-responsive"><table class="table table-sm table-bordered mb-2">'
-                        + '<thead class="table-light"><tr><th>#</th><th>SKU</th><th>Product</th><th>Color</th><th>Size</th><th class="text-center">Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>';
+                        + '<thead class="table-light"><tr><th>#</th><th>SKU</th><th>Product</th><th>Color</th><th>Size</th><th class="text-center">Qty</th><th>Price</th><th>Total</th><th>Fulfill</th></tr></thead><tbody>';
                     $.each(items, function(i, it) {
-                        tableHtml += '<tr>'
+                        var fulfillBadge = it.IsFulfilled !== false
+                            ? '<span class="badge" style="background:#dcfce7;color:#16a34a;font-size:0.72rem;">Fulfilled</span>'
+                            : '<span class="badge" style="background:#fee2e2;color:#dc2626;font-size:0.72rem;">Unfulfilled</span>';
+                        var rowStyle = it.IsFulfilled === false ? ' style="opacity:0.65;background:#f9fafb;"' : '';
+                        tableHtml += '<tr' + rowStyle + '>'
                             + '<td>' + (i+1) + '</td>'
                             + '<td><code style="font-size:0.75rem;">' + escHtml(it.SKUNumber) + '</code></td>'
                             + '<td>' + escHtml(it.ProductName) + '</td>'
@@ -1403,6 +1442,7 @@
                             + '<td class="text-center">' + it.Quantity + '</td>'
                             + '<td>Rs. ' + parseFloat(it.SalePrice).toLocaleString('en-PK', pkFmt) + '</td>'
                             + '<td>Rs. ' + parseFloat(it.TotalAmount).toLocaleString('en-PK', pkFmt) + '</td>'
+                            + '<td>' + fulfillBadge + '</td>'
                             + '</tr>';
                     });
                     tableHtml += '</tbody></table></div>';
@@ -1774,7 +1814,8 @@
                     salePrice:    v.SalePrice,
                     marketStocks: v.MarketStocks || [],
                     orderRef:     '',
-                    trackingNo:   ''
+                    trackingNo:   '',
+                    isFulfilled:  true
                 });
                 added++;
             });
@@ -1840,7 +1881,7 @@
         function renderManualItems() {
             var $body = $('#manualSaleItemsBody');
             if (manualSaleItems.length === 0) {
-                $body.html('<tr><td colspan="9" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i> No items added. Search and add SKU above.</td></tr>');
+                $body.html('<tr><td colspan="10" class="text-center text-muted py-3"><i class="fas fa-inbox me-1"></i> No items added. Search and add SKU above.</td></tr>');
                 $('#lblManualTotalQty').text('0');
                 $('#lblManualGrandTotal').text('Rs. 0.00');
                 return;
@@ -1855,15 +1896,21 @@
                 var orVal     = escHtml(it.orderRef   || '');
                 var tnVal     = escHtml(it.trackingNo || '');
                 var orBorder  = $.trim(it.orderRef) ? '' : 'border-color:#dc2626;';
-                html += '<tr style="font-size:0.93rem;">'
+                var manDis    = it.isFulfilled === false ? ' disabled' : '';
+                var manFulfillBtn = it.isFulfilled !== false
+                    ? '<button type="button" class="btn-fulfill" onclick="toggleManualFulfillment(' + idx + ')" title="Mark as Unfulfilled"><i class="fas fa-check-circle"></i></button>'
+                    : '<button type="button" class="btn-unfulfill" onclick="toggleManualFulfillment(' + idx + ')" title="Mark as Fulfilled"><i class="fas fa-ban"></i></button>';
+                var manTrClass = it.isFulfilled === false ? ' class="row-unfulfilled"' : '';
+                html += '<tr style="font-size:0.93rem;"' + manTrClass + '>'
                       + '<td class="text-center text-muted">' + (idx + 1) + '</td>'
-                      + '<td><input type="text" class="form-control form-control-sm" style="' + orBorder + '" placeholder="Order ID" maxlength="200" value="' + orVal + '" oninput="updateManualItemOrderRef(' + idx + ',this.value,this)" /></td>'
+                      + '<td><input type="text" class="form-control form-control-sm" style="' + orBorder + '" placeholder="Order ID" maxlength="200" value="' + orVal + '" oninput="updateManualItemOrderRef(' + idx + ',this.value,this)"' + manDis + ' /></td>'
                       + '<td>' + skuCell + '</td>'
-                      + '<td><input type="text" class="form-control form-control-sm" placeholder="Tracking No" maxlength="200" value="' + tnVal + '" oninput="updateManualItemTrackingNo(' + idx + ',this.value)" /></td>'
+                      + '<td><input type="text" class="form-control form-control-sm" placeholder="Tracking No" maxlength="200" value="' + tnVal + '" oninput="updateManualItemTrackingNo(' + idx + ',this.value)"' + manDis + ' /></td>'
                       + '<td class="text-center">' + escHtml(it.size) + '</td>'
-                      + '<td><input type="number" class="form-control text-center" style="' + qtyStyle + '" min="1" value="' + it.qty + '" onchange="updateManualItemQty(' + idx + ',this.value)" /></td>'
-                      + '<td><div class="input-group"><span class="input-group-text" style="font-size:0.88rem;">Rs.</span><input type="number" class="form-control" style="font-size:0.9rem;" min="0" step="0.01" value="' + (it.salePrice || '') + '" placeholder="0" onchange="updateManualItemPrice(' + idx + ',this.value)" /></div></td>'
+                      + '<td><input type="number" class="form-control text-center" style="' + qtyStyle + '" min="1" value="' + it.qty + '" onchange="updateManualItemQty(' + idx + ',this.value)"' + manDis + ' /></td>'
+                      + '<td><div class="input-group"><span class="input-group-text" style="font-size:0.88rem;">Rs.</span><input type="number" class="form-control" style="font-size:0.9rem;" min="0" step="0.01" value="' + (it.salePrice || '') + '" placeholder="0" onchange="updateManualItemPrice(' + idx + ',this.value)"' + manDis + ' /></div></td>'
                       + '<td class="fw-semibold" id="rowTotal_' + idx + '" style="font-size:0.93rem;">Rs. ' + parseFloat(lineTotal).toLocaleString('en-PK', pkFmt) + '</td>'
+                      + '<td class="text-center">' + manFulfillBtn + '</td>'
                       + '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeManualItem(' + idx + ')"><i class="fas fa-times"></i></button></td>'
                       + '</tr>';
             });
@@ -1922,7 +1969,8 @@
                             Color:       it.color,
                             Size:        it.size,
                             Quantity:    it.qty,
-                            SalePrice:   it.salePrice
+                            SalePrice:   it.salePrice,
+                            IsFulfilled: it.isFulfilled !== false
                         };
                     })
                 };

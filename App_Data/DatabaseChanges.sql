@@ -186,4 +186,15 @@ BEGIN
 END
 GO
 
+-- ============================================================
+-- SaleItems.IsFulfilled  (fulfillment flag per sale item)
+-- ============================================================
+IF NOT EXISTS (
+    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_NAME = 'SaleItems' AND COLUMN_NAME = 'IsFulfilled')
+BEGIN
+    ALTER TABLE SaleItems ADD IsFulfilled BIT NOT NULL DEFAULT 1;
+END
+GO
+
 PRINT 'DatabaseChanges applied successfully.';

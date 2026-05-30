@@ -12,7 +12,7 @@ namespace Onfoot_Inventory
 {
     public partial class Sales : System.Web.UI.Page
     {
-        protected void Page_Load(object sender, EventArgs e) { EnsureCourierIdColumn(); EnsureBOLFileColumn(); }
+        protected void Page_Load(object sender, EventArgs e) { EnsureCourierIdColumn(); EnsureBOLFileColumn(); EnsureIsFulfilledColumn(); }
 
         private static void EnsureCourierIdColumn()
         {
@@ -64,6 +64,26 @@ namespace Onfoot_Inventory
             catch { }
         }
 
+        private static void EnsureIsFulfilledColumn()
+        {
+            try
+            {
+                using (var conn = GetConnection())
+                {
+                    conn.Open();
+                    using (var cmd = new SqlCommand(@"
+                        IF NOT EXISTS (
+                            SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = 'SaleItems' AND COLUMN_NAME = 'IsFulfilled')
+                        ALTER TABLE SaleItems ADD IsFulfilled BIT NOT NULL DEFAULT 1;", conn))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch { }
+        }
+
         // ============================================================
         // MODELS
         // ============================================================
@@ -94,6 +114,7 @@ namespace Onfoot_Inventory
             public string  Size        { get; set; }
             public int     Quantity    { get; set; }
             public decimal SalePrice   { get; set; }
+            public bool?   IsFulfilled { get; set; }  // null = treat as true (fulfilled)
         }
 
         public class BolSaleGroup
@@ -486,6 +507,7 @@ namespace Onfoot_Inventory
                     {
                         while (rdr2.Read())
                         {
+                            bool isFulfilled = !rdr2.IsDBNull(rdr2.GetOrdinal("IsFulfilled")) && Convert.ToBoolean(rdr2["IsFulfilled"]);
                             items.Add(new
                             {
                                 SaleItemId  = Convert.ToInt32(rdr2["SaleItemId"]),
@@ -496,7 +518,8 @@ namespace Onfoot_Inventory
                                 Size        = SafeStr(rdr2, "Size"),
                                 Quantity    = Convert.ToInt32(rdr2["Quantity"]),
                                 SalePrice   = SafeDec(rdr2, "SalePrice"),
-                                TotalAmount = SafeDec(rdr2, "TotalAmount")
+                                TotalAmount = SafeDec(rdr2, "TotalAmount"),
+                                IsFulfilled = isFulfilled
                             });
                         }
                     }
@@ -583,13 +606,13 @@ namespace Onfoot_Inventory
                 {
                     conn.Open();
 
-                    // Verify sale exists and is Completed
+                    // Verify sale exists and is not Cancelled
                     using (var cmd = new SqlCommand("SELECT Status FROM Sales WHERE SaleId = @Id", conn))
                     {
                         cmd.Parameters.AddWithValue("@Id", sale.SaleId);
                         var r = cmd.ExecuteScalar();
                         if (r == null) return Fail("Sale not found.");
-                        if (r.ToString() != "Completed") return Fail("Only completed sales can be edited.");
+                        if (r.ToString() == "Cancelled") return Fail("Cancelled sales cannot be edited.");
                     }
 
                     // Duplicate bill check (exclude this sale)
@@ -669,12 +692,17 @@ namespace Onfoot_Inventory
                         cmd.ExecuteNonQuery();
                     }
 
-                    // Step 3: Update sale header
+                    // Step 3: Compute status from new items, then update sale header
+                    int editFulfilled = newItems.Count(it => it.IsFulfilled ?? true);
+                    string editStatus = editFulfilled == newItems.Count ? "Completed"
+                                      : editFulfilled == 0 ? "Unfulfilled"
+                                      : "Partial";
+
                     using (var cmd = new SqlCommand(@"
                         UPDATE Sales
                         SET    BillNumber = @BillNumber, Platform = @Platform, SaleDate = @SaleDate,
-                               TotalQty = @TotalQty, TotalAmount = @TotalAmount, Notes = @Notes,
-                               OrderRef = @OrderRef, UpdatedDate = GETDATE()
+                               TotalQty = @TotalQty, TotalAmount = @TotalAmount, Status = @Status,
+                               Notes = @Notes, OrderRef = @OrderRef, UpdatedDate = GETDATE()
                         WHERE  SaleId = @SaleId", conn))
                     {
                         cmd.Parameters.AddWithValue("@BillNumber",  sale.BillNumber.Trim());
@@ -682,6 +710,7 @@ namespace Onfoot_Inventory
                         cmd.Parameters.AddWithValue("@SaleDate",    DateTime.Parse(sale.SaleDate));
                         cmd.Parameters.AddWithValue("@TotalQty",    totalQty);
                         cmd.Parameters.AddWithValue("@TotalAmount", totalAmount);
+                        cmd.Parameters.AddWithValue("@Status",      editStatus);
                         cmd.Parameters.AddWithValue("@Notes",       (object)(sale.Notes?.Trim())   ?? DBNull.Value);
                         cmd.Parameters.AddWithValue("@OrderRef",    string.IsNullOrWhiteSpace(sale.OrderRef) ? (object)DBNull.Value : sale.OrderRef.Trim());
                         cmd.Parameters.AddWithValue("@SaleId",      sale.SaleId);
@@ -705,9 +734,9 @@ namespace Onfoot_Inventory
 
                         using (var cmd = new SqlCommand(@"
                             INSERT INTO SaleItems
-                                (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount)
+                                (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount, IsFulfilled)
                             VALUES
-                                (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount)", conn))
+                                (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount, @IsFulfilled)", conn))
                         {
                             cmd.Parameters.AddWithValue("@SaleId",      sale.SaleId);
                             cmd.Parameters.AddWithValue("@VariantId",   it.VariantId > 0 ? (object)it.VariantId : DBNull.Value);
@@ -718,10 +747,11 @@ namespace Onfoot_Inventory
                             cmd.Parameters.AddWithValue("@Quantity",    it.Quantity);
                             cmd.Parameters.AddWithValue("@SalePrice",   it.SalePrice);
                             cmd.Parameters.AddWithValue("@TotalAmount", lineTotal);
+                            cmd.Parameters.AddWithValue("@IsFulfilled", it.IsFulfilled ?? true);
                             cmd.ExecuteNonQuery();
                         }
 
-                        if (it.VariantId > 0)
+                        if (it.VariantId > 0 && (it.IsFulfilled ?? true))
                         {
                             int saleItemId = 0;
                             using (var cmd = new SqlCommand(
@@ -880,11 +910,16 @@ namespace Onfoot_Inventory
                             return Fail("Bill Number '" + sale.BillNumber + "' already exists for " + sale.Platform + ".");
                     }
 
-                    // Insert Sale header
+                    // Compute status from items, then insert Sale header
+                    int saveFulfilled = items.Count(it => it.IsFulfilled ?? true);
+                    string saveStatus = saveFulfilled == items.Count ? "Completed"
+                                      : saveFulfilled == 0 ? "Unfulfilled"
+                                      : "Partial";
+
                     const string insertSale = @"
                         INSERT INTO Sales (BillNumber, Platform, SaleDate, TotalQty, TotalAmount, Status, Notes, SaleSource, CourierId, BOLFile, TrackingNo, OrderRef)
                         OUTPUT INSERTED.SaleId
-                        VALUES (@BillNumber, @Platform, @SaleDate, @TotalQty, @TotalAmount, 'Completed', @Notes, @SaleSource, @CourierId, @BOLFile, @TrackingNo, @OrderRef)";
+                        VALUES (@BillNumber, @Platform, @SaleDate, @TotalQty, @TotalAmount, @Status, @Notes, @SaleSource, @CourierId, @BOLFile, @TrackingNo, @OrderRef)";
 
                     using (var cmd = new SqlCommand(insertSale, conn))
                     {
@@ -893,6 +928,7 @@ namespace Onfoot_Inventory
                         cmd.Parameters.AddWithValue("@SaleDate",    DateTime.Parse(sale.SaleDate));
                         cmd.Parameters.AddWithValue("@TotalQty",    totalQty);
                         cmd.Parameters.AddWithValue("@TotalAmount", totalAmount);
+                        cmd.Parameters.AddWithValue("@Status",      saveStatus);
                         cmd.Parameters.AddWithValue("@Notes",       (object)(sale.Notes?.Trim())   ?? DBNull.Value);
                         cmd.Parameters.AddWithValue("@SaleSource",  string.IsNullOrWhiteSpace(sale.SaleSource) ? "Manual" : sale.SaleSource.Trim());
                         cmd.Parameters.AddWithValue("@CourierId",   sale.CourierId.HasValue ? (object)sale.CourierId.Value : DBNull.Value);
@@ -919,9 +955,9 @@ namespace Onfoot_Inventory
 
                         const string insertItem = @"
                             INSERT INTO SaleItems
-                                (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount)
+                                (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount, IsFulfilled)
                             VALUES
-                                (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount)";
+                                (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount, @IsFulfilled)";
 
                         using (var cmd = new SqlCommand(insertItem, conn))
                         {
@@ -934,10 +970,11 @@ namespace Onfoot_Inventory
                             cmd.Parameters.AddWithValue("@Quantity",    it.Quantity);
                             cmd.Parameters.AddWithValue("@SalePrice",   it.SalePrice);
                             cmd.Parameters.AddWithValue("@TotalAmount", lineTotal);
+                            cmd.Parameters.AddWithValue("@IsFulfilled", it.IsFulfilled ?? true);
                             cmd.ExecuteNonQuery();
                         }
 
-                        if (it.VariantId > 0)
+                        if (it.VariantId > 0 && (it.IsFulfilled ?? true))
                         {
                             int saleItemId = 0;
 
@@ -1246,16 +1283,20 @@ namespace Onfoot_Inventory
                             existingCount = seq - 1;
                         }
 
-                        // Compute totals
+                        // Compute totals and fulfillment status
                         int     totalQty    = 0;
                         decimal totalAmount = 0;
                         foreach (var it in grp.Items) { totalQty += it.Quantity; totalAmount += it.Quantity * it.SalePrice; }
+                        int grpFulfilled = grp.Items.Count(it => it.IsFulfilled ?? true);
+                        string grpStatus = grpFulfilled == grp.Items.Count ? "Completed"
+                                         : grpFulfilled == 0 ? "Unfulfilled"
+                                         : "Partial";
 
                         // Insert Sale header
                         const string insertSale = @"
                             INSERT INTO Sales (BillNumber, Platform, SaleDate, TotalQty, TotalAmount, Status, Notes, SaleSource, CourierId, BOLFile, TrackingNo, OrderRef)
                             OUTPUT INSERTED.SaleId
-                            VALUES (@BillNumber, @Platform, @SaleDate, @TotalQty, @TotalAmount, 'Completed', @Notes, @SaleSource, @CourierId, @BOLFile, @TrackingNo, @OrderRef)";
+                            VALUES (@BillNumber, @Platform, @SaleDate, @TotalQty, @TotalAmount, @Status, @Notes, @SaleSource, @CourierId, @BOLFile, @TrackingNo, @OrderRef)";
 
                         int saleId;
                         using (var cmd = new SqlCommand(insertSale, conn))
@@ -1265,6 +1306,7 @@ namespace Onfoot_Inventory
                             cmd.Parameters.AddWithValue("@SaleDate",    saleDateParsed);
                             cmd.Parameters.AddWithValue("@TotalQty",    totalQty);
                             cmd.Parameters.AddWithValue("@TotalAmount", totalAmount);
+                            cmd.Parameters.AddWithValue("@Status",      grpStatus);
                             cmd.Parameters.AddWithValue("@Notes",       string.IsNullOrWhiteSpace(notes)             ? (object)DBNull.Value : notes.Trim());
                             cmd.Parameters.AddWithValue("@SaleSource",  string.IsNullOrWhiteSpace(saleSource)        ? "Manual" : saleSource.Trim());
                             cmd.Parameters.AddWithValue("@CourierId",   courierId.HasValue ? (object)courierId.Value : DBNull.Value);
@@ -1281,10 +1323,10 @@ namespace Onfoot_Inventory
 
                             const string insertItem = @"
                                 INSERT INTO SaleItems
-                                    (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount)
+                                    (SaleId, VariantId, SKUNumber, ProductName, Color, Size, Quantity, SalePrice, TotalAmount, IsFulfilled)
                                 OUTPUT INSERTED.SaleItemId
                                 VALUES
-                                    (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount)";
+                                    (@SaleId, @VariantId, @SKUNumber, @ProductName, @Color, @Size, @Quantity, @SalePrice, @TotalAmount, @IsFulfilled)";
 
                             int saleItemId;
                             using (var cmd = new SqlCommand(insertItem, conn))
@@ -1298,10 +1340,11 @@ namespace Onfoot_Inventory
                                 cmd.Parameters.AddWithValue("@Quantity",    it.Quantity);
                                 cmd.Parameters.AddWithValue("@SalePrice",   it.SalePrice);
                                 cmd.Parameters.AddWithValue("@TotalAmount", lineTotal);
+                                cmd.Parameters.AddWithValue("@IsFulfilled", it.IsFulfilled ?? true);
                                 saleItemId = Convert.ToInt32(cmd.ExecuteScalar());
                             }
 
-                            if (it.VariantId > 0)
+                            if (it.VariantId > 0 && (it.IsFulfilled ?? true))
                             {
                                 if (marketplaceId.HasValue)
                                 {
