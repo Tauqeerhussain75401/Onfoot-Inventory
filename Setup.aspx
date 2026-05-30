@@ -216,6 +216,39 @@
 
         .empty-state p { font-size: 0.84rem; margin: 0; }
 
+        /* ── Shopify Import Tab ── */
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 44px 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: var(--body-bg);
+            user-select: none;
+        }
+        .drop-zone:hover, .drop-zone.drag-over {
+            border-color: #ea580c;
+            background: #fff7ed;
+        }
+        .imp-stats { display: flex; gap: 10px; flex-wrap: wrap; padding: 0 20px 14px; }
+        .imp-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: var(--body-bg); border: 1px solid var(--border);
+            border-radius: 20px; padding: 4px 14px; font-size: 0.79rem; font-weight: 600;
+            color: var(--text-main);
+        }
+        .imp-table { font-size: 0.78rem; white-space: nowrap; margin-bottom: 0; }
+        .imp-table th {
+            background: #f8fafc; font-size: 0.72rem; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.04em;
+            color: var(--text-muted); padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; z-index: 1;
+        }
+        .imp-table td { padding: 6px 12px; vertical-align: middle; border-bottom: 1px solid #f1f5f9; }
+        .imp-scroll { overflow-x: auto; max-height: 460px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+
         /* ── Toggle switch ── */
         .form-switch .form-check-input { cursor: pointer; }
 
@@ -318,6 +351,10 @@
             <span class="tab-icon"><i class="fas fa-truck"></i></span>
             Couriers
         </button>
+        <button class="setup-tab-btn" onclick="showShopifyImport(this)" type="button">
+            <span class="tab-icon"><i class="fas fa-file-import"></i></span>
+            Shopify Import
+        </button>
     </div>
 
     <!-- ============================================================ -->
@@ -407,6 +444,65 @@
         </div>
     </div>
 
+
+    <!-- ============================================================ -->
+    <!--  TAB: SHOPIFY IMPORT                                         -->
+    <!-- ============================================================ -->
+    <div class="setup-tab-panel" id="panel-shopify">
+        <div class="table-card">
+            <div class="module-header">
+                <div class="module-title">
+                    <div class="module-icon orange"><i class="fas fa-file-import"></i></div>
+                    <div>
+                        <h5>Shopify Product Import</h5>
+                        <p>Upload Shopify product export (.xlsx / .xls) to bulk import products &amp; variants with stock</p>
+                    </div>
+                </div>
+                <div class="module-actions" id="impActions" style="display:none">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="clearImport()" type="button">
+                        <i class="fas fa-times me-1"></i> Clear
+                    </button>
+                    <button class="btn btn-success btn-sm" id="btnSaveImport" onclick="saveImport()" type="button">
+                        <i class="fas fa-database me-1"></i> Save to Database
+                    </button>
+                </div>
+            </div>
+
+            <!-- Upload Zone -->
+            <div style="padding:24px 20px" id="impUploadWrapper">
+                <div class="drop-zone" id="impDropZone" onclick="document.getElementById('impFileInput').click()">
+                    <div style="font-size:2.8rem;color:#ea580c;opacity:.7;margin-bottom:12px">
+                        <i class="fas fa-file-excel"></i>
+                    </div>
+                    <p style="font-size:0.9rem;font-weight:700;color:var(--text-main);margin:0 0 6px">
+                        Drop your Shopify export here
+                    </p>
+                    <p style="font-size:0.78rem;color:var(--text-muted);margin:0">
+                        or click to browse &mdash; supports <strong>.xlsx</strong> and <strong>.xls</strong> files
+                    </p>
+                </div>
+                <input type="file" id="impFileInput" accept=".xlsx,.xls" style="display:none" />
+            </div>
+
+            <!-- Stats strip -->
+            <div class="imp-stats" id="impStats" style="display:none">
+                <div class="imp-chip"><i class="fas fa-box" style="color:#3b82f6"></i><span id="impStatProducts">—</span></div>
+                <div class="imp-chip"><i class="fas fa-layer-group" style="color:#8b5cf6"></i><span id="impStatVariants">—</span></div>
+                <div class="imp-chip"><i class="fas fa-file-alt" style="color:#ea580c"></i><span id="impStatFile">—</span></div>
+            </div>
+
+            <!-- Preview table -->
+            <div style="display:none;padding:0 20px 24px" id="impPreviewWrapper">
+                <div class="imp-scroll">
+                    <table class="table table-hover imp-table">
+                        <thead id="impPreviewHead"></thead>
+                        <tbody id="impPreviewBody"></tbody>
+                    </table>
+                </div>
+                <p style="font-size:0.73rem;color:var(--text-muted);margin-top:8px;margin-bottom:0" id="impPreviewNote"></p>
+            </div>
+        </div>
+    </div>
 
     <!-- ============================================================ -->
     <!--  MODAL: MARKETPLACE                                          -->
@@ -572,6 +668,7 @@
 </asp:Content>
 
 <asp:Content ID="ScriptsContent" ContentPlaceHolderID="ScriptsContent" runat="server">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 // ============================================================
 // UTILITIES
@@ -906,9 +1003,188 @@ function escHtml(s) {
 // ============================================================
 // TAB CLICK HANDLERS (called from inline onclick attributes)
 // ============================================================
-function showMarketplaces(btn) { switchTab('marketplaces', btn); loadMarketplaces(); }
-function showCategories(btn)   { switchTab('categories', btn);   loadCategories(); }
-function showCouriers(btn)     { switchTab('couriers', btn);     loadCouriers(); }
+function showMarketplaces(btn)  { switchTab('marketplaces', btn); loadMarketplaces(); }
+function showCategories(btn)    { switchTab('categories', btn);   loadCategories(); }
+function showCouriers(btn)      { switchTab('couriers', btn);     loadCouriers(); }
+function showShopifyImport(btn) { switchTab('shopify', btn); }
+
+// ============================================================
+// SHOPIFY IMPORT
+// ============================================================
+var _impRows   = [];
+var _impMapped = [];
+
+function clearImport() {
+    _impRows = []; _impMapped = [];
+    document.getElementById('impUploadWrapper').style.display = 'block';
+    document.getElementById('impStats').style.display        = 'none';
+    document.getElementById('impPreviewWrapper').style.display = 'none';
+    document.getElementById('impActions').style.display      = 'none';
+    document.getElementById('impFileInput').value            = '';
+}
+
+function _mapCol(row, names) {
+    var keys = Object.keys(row);
+    for (var i = 0; i < names.length; i++) {
+        var n = names[i].toLowerCase();
+        var k = keys.find(function(k) { return k.toLowerCase() === n; });
+        if (!k) k = keys.find(function(k) { return k.toLowerCase().indexOf(n) !== -1; });
+        if (k !== undefined) { var v = String(row[k]).trim(); if (v !== '') return v; }
+    }
+    return '';
+}
+
+function handleImpFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(evt) {
+        try {
+            var wb = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
+            var ws = wb.Sheets[wb.SheetNames[0]];
+            var rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+            if (!rows || rows.length === 0) { toast('File appears to be empty.', 'error'); return; }
+            _impRows = rows;
+            renderImpPreview(file.name);
+        } catch (ex) { toast('Parse error: ' + ex.message, 'error'); }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function parseSku(sku) {
+    // Handles all known formats:
+    //  "Flat - 062 - Fawn - Size - 36"   → code="062", name="062 - Flat"
+    //  "Heel - H2 - Maroon - 42"          → code="H2",  name="H2 - Heel"
+    //  "Pumps Jelly- 001 - BK - Size 36"  → code="001", name="001 - Pumps Jelly"
+    if (!sku) return { code: '', name: '' };
+
+    // Step 1: strip size suffix
+    // Handles: " - Size - 36", " - Size 36", " - 36"
+    var base = sku.replace(/\s*-\s*(Size\s*[-\s]*)?\d+\s*$/i, '').trim();
+
+    // Step 2: split remaining by " - "
+    var parts = base.split(' - ');
+    var pType, pCode;
+
+    if (parts.length >= 3) {
+        // Normal case: ["Flat", "062", "Fawn"]
+        pType = parts[0].trim();
+        pCode = parts[1].trim();
+    } else if (parts.length === 2) {
+        // Embedded-dash case: ["Pumps Jelly- 001", "BK"]
+        // Code is attached to the end of parts[0] via a bare dash
+        var first = parts[0].trim();
+        var di    = first.lastIndexOf('-');
+        if (di !== -1) {
+            pType = first.substring(0, di).trim();
+            pCode = first.substring(di + 1).trim();
+        } else {
+            pType = first; pCode = '';
+        }
+    } else {
+        pType = base; pCode = '';
+    }
+
+    var name = pCode ? (pCode + ' - ' + pType) : pType;
+    return { code: pCode || pType, name: name.trim() };
+}
+
+function renderImpPreview(fileName) {
+    _impMapped = _impRows.map(function(r) {
+        var sku    = _mapCol(r, ['variant sku', 'sku']);
+        var parsed = parseSku(sku);
+
+        // Category: take last segment after ">"
+        var rawCat  = _mapCol(r, ['product category', 'type', 'category']);
+        var catSegs = rawCat.split('>');
+        var catName = catSegs[catSegs.length - 1].trim();
+
+        return {
+            Handle:       parsed.code,
+            Title:        parsed.name,
+            Type:         catName,
+            SKU:          sku,
+            Option1Name:  _mapCol(r, ['option1 name']),
+            Option1Value: _mapCol(r, ['option1 value']),
+            Option2Name:  _mapCol(r, ['option2 name']),
+            Option2Value: _mapCol(r, ['option2 value']),
+            Option3Name:  '',
+            Option3Value: '',
+            Price:        0,
+            CostPrice:    0,
+            Stock:        parseInt(_mapCol(r, ['variant inventory qty', 'inventory qty', 'stock quantity', 'stock']) || '0') || 0,
+            Status:       'active'
+        };
+    });
+
+    // Count unique products
+    var seen = {};
+    _impMapped.forEach(function(r) { if (r.Handle) seen[r.Handle] = true; });
+    var productCount = Object.keys(seen).length;
+
+    document.getElementById('impStatProducts').textContent = productCount + ' Products';
+    document.getElementById('impStatVariants').textContent = _impMapped.length + ' Variants';
+    document.getElementById('impStatFile').textContent     = fileName;
+    document.getElementById('impStats').style.display      = 'flex';
+    document.getElementById('impUploadWrapper').style.display = 'none';
+
+    // Preview columns
+    var COLS   = ['Handle', 'Title', 'Type', 'Option1Value', 'Option2Value', 'SKU', 'Stock'];
+    var LABELS = ['Code', 'Product Name', 'Category', 'Color', 'Size', 'Variant SKU', 'Stock'];
+
+    document.getElementById('impPreviewHead').innerHTML =
+        '<tr>' + LABELS.map(function(l) { return '<th>' + l + '</th>'; }).join('') + '</tr>';
+
+    var preview = _impMapped.slice(0, 300);
+    document.getElementById('impPreviewBody').innerHTML = preview.map(function(r) {
+        return '<tr>' + COLS.map(function(c) {
+            var v = r[c];
+            if (c === 'Stock')
+                return '<td><span style="font-weight:' + (v > 0 ? '700;color:var(--success)' : '400;color:var(--text-muted)') + '">' + v + '</span></td>';
+            return '<td>' + escHtml(String(v || '')) + '</td>';
+        }).join('') + '</tr>';
+    }).join('');
+
+    document.getElementById('impPreviewNote').textContent = _impMapped.length > 300
+        ? 'Showing first 300 of ' + _impMapped.length + ' rows. All rows will be saved.'
+        : 'All ' + _impMapped.length + ' rows shown.';
+
+    document.getElementById('impPreviewWrapper').style.display = 'block';
+    document.getElementById('impActions').style.display        = 'flex';
+}
+
+function saveImport() {
+    if (!_impMapped || _impMapped.length === 0) { toast('No data to save.', 'error'); return; }
+    var btn = document.getElementById('btnSaveImport');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...';
+    $.ajax({
+        type: 'POST',
+        url: 'Setup.aspx/ImportShopifyProducts',
+        data: JSON.stringify({ rowsJson: JSON.stringify(_impMapped) }),
+        contentType: 'application/json; charset=utf-8',
+        dataType: 'json',
+        success: function(r) {
+            var d = typeof r.d === 'string' ? JSON.parse(r.d) : r.d;
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-database me-1"></i> Save to Database';
+            toast(d.message, d.success ? 'success' : 'error');
+        },
+        error: function(xhr) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-database me-1"></i> Save to Database';
+            var msg = 'Save failed';
+            try {
+                var resp = JSON.parse(xhr.responseText);
+                if (resp && resp.ExceptionMessage) msg = resp.ExceptionMessage;
+                else if (resp && resp.Message)     msg = resp.Message;
+                else if (resp && resp.d)            msg = resp.d;
+            } catch(ex) {
+                if (xhr.responseText) msg = xhr.responseText.substring(0, 250);
+            }
+            toast(msg, 'error');
+        }
+    });
+}
 
 // ============================================================
 // INIT
@@ -928,6 +1204,19 @@ $(function() {
             }
         });
     });
+
+    // Shopify Import – file input + drag-and-drop
+    var dz = document.getElementById('impDropZone');
+    var fi = document.getElementById('impFileInput');
+    if (dz && fi) {
+        fi.addEventListener('change', function() { if (fi.files && fi.files[0]) handleImpFile(fi.files[0]); });
+        dz.addEventListener('dragover',  function(e) { e.preventDefault(); dz.classList.add('drag-over'); });
+        dz.addEventListener('dragleave', function()  { dz.classList.remove('drag-over'); });
+        dz.addEventListener('drop', function(e) {
+            e.preventDefault(); dz.classList.remove('drag-over');
+            var f = e.dataTransfer.files[0]; if (f) handleImpFile(f);
+        });
+    }
 });
 </script>
 </asp:Content>

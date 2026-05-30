@@ -43,6 +43,24 @@ namespace Onfoot_Inventory
             public bool   IsActive    { get; set; }
         }
 
+        public class ShopifyRowDto
+        {
+            public string  Handle       { get; set; }
+            public string  Title        { get; set; }
+            public string  Type         { get; set; }
+            public string  SKU          { get; set; }
+            public string  Option1Name  { get; set; }
+            public string  Option1Value { get; set; }
+            public string  Option2Name  { get; set; }
+            public string  Option2Value { get; set; }
+            public string  Option3Name  { get; set; }
+            public string  Option3Value { get; set; }
+            public decimal Price        { get; set; }
+            public decimal CostPrice    { get; set; }
+            public int     Stock        { get; set; }
+            public string  Status       { get; set; }
+        }
+
         // ── Helpers ─────────────────────────────────────────────────────────────
 
         private static SqlConnection GetConnection()
@@ -553,6 +571,192 @@ namespace Onfoot_Inventory
                 return Ok("Courier deleted successfully.");
             }
             catch (Exception ex) { return Fail("Error: " + ex.Message); }
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        //  SHOPIFY IMPORT
+        // ════════════════════════════════════════════════════════════════════════
+
+        [WebMethod]
+        public static string ImportShopifyProducts(string rowsJson)
+        {
+            try
+            {
+                var rows = JsonConvert.DeserializeObject<List<ShopifyRowDto>>(rowsJson);
+                if (rows == null || rows.Count == 0)
+                    return Fail("No data to import.");
+
+                int productsInserted = 0, variantsInserted = 0, skipped = 0;
+
+                using (var conn = GetConnection())
+                {
+                    conn.Open();
+
+                    // Group rows by Handle (each Handle = one parent product)
+                    var groups = new Dictionary<string, List<ShopifyRowDto>>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var row in rows)
+                    {
+                        var handle = (row.Handle ?? "").Trim();
+                        if (string.IsNullOrEmpty(handle))
+                            handle = "SHOPIFY_" + Guid.NewGuid().ToString("N").Substring(0, 8);
+                        if (!groups.ContainsKey(handle)) groups[handle] = new List<ShopifyRowDto>();
+                        groups[handle].Add(row);
+                    }
+
+                    foreach (var kvp in groups)
+                    {
+                        var handle      = kvp.Key;
+                        var variantRows = kvp.Value;
+                        var first       = variantRows[0];
+
+                        // Skip if product already imported (same ProductCode)
+                        int productId = 0;
+                        using (var cmd = new SqlCommand(
+                            "SELECT ProductId FROM Products WHERE ProductCode = @Code", conn))
+                        {
+                            cmd.Parameters.AddWithValue("@Code", handle);
+                            var r = cmd.ExecuteScalar();
+                            if (r != null && r != DBNull.Value) productId = Convert.ToInt32(r);
+                        }
+
+                        if (productId > 0) { skipped++; continue; }
+
+                        // Resolve / auto-create category
+                        var typeName   = (first.Type ?? "").Trim();
+                        int categoryId = string.IsNullOrEmpty(typeName)
+                            ? GetOrCreateCategory(conn, "Shopify Import")
+                            : GetOrCreateCategory(conn, typeName);
+
+                        var productName = (first.Title ?? handle).Trim();
+                        var salePrice   = variantRows.Count > 0 ? variantRows[0].Price    : 0m;
+                        var costPrice   = variantRows.Count > 0 ? variantRows[0].CostPrice : 0m;
+                        bool isActive   = !string.Equals((first.Status ?? "").Trim(), "draft", StringComparison.OrdinalIgnoreCase);
+                        // Product SKU = first variant's SKU without the size suffix
+                        // "Flat - 062 - Fawn - Size - 36" → "Flat - 062 - Fawn"
+                        var productSku  = StripSizeFromSku(first.SKU);
+
+                        using (var cmd = new SqlCommand(@"
+                            INSERT INTO Products
+                                (ProductCode, SKUNumber, ProductName, CategoryId, CostPrice, SalePrice, IsActive, CreatedDate)
+                            OUTPUT INSERTED.ProductId
+                            VALUES (@Code, @SKU, @Name, @CatId, @Cost, @Price, @Active, GETDATE())", conn))
+                        {
+                            cmd.Parameters.AddWithValue("@Code",   handle);
+                            cmd.Parameters.AddWithValue("@SKU",    (object)productSku ?? DBNull.Value);
+                            cmd.Parameters.AddWithValue("@Name",   productName);
+                            cmd.Parameters.AddWithValue("@CatId",  categoryId);
+                            cmd.Parameters.AddWithValue("@Cost",   costPrice);
+                            cmd.Parameters.AddWithValue("@Price",  salePrice);
+                            cmd.Parameters.AddWithValue("@Active", isActive);
+                            productId = Convert.ToInt32(cmd.ExecuteScalar());
+                        }
+                        productsInserted++;
+
+                        // Insert variants
+                        foreach (var vr in variantRows)
+                        {
+                            string color = "", size = "";
+
+                            var opts = new[]
+                            {
+                                new { Name = (vr.Option1Name  ?? "").ToLowerInvariant(), Value = vr.Option1Value  ?? "" },
+                                new { Name = (vr.Option2Name  ?? "").ToLowerInvariant(), Value = vr.Option2Value  ?? "" },
+                                new { Name = (vr.Option3Name  ?? "").ToLowerInvariant(), Value = vr.Option3Value  ?? "" }
+                            };
+
+                            foreach (var o in opts)
+                            {
+                                if (o.Name.Contains("color") || o.Name.Contains("colour"))
+                                    color = o.Value.Trim();
+                                else if (o.Name.Contains("size"))
+                                    size  = o.Value.Trim();
+                            }
+
+                            // Fallback: option1 = color, option2 = size
+                            if (string.IsNullOrEmpty(color) && !string.IsNullOrEmpty((vr.Option1Value ?? "").Trim()))
+                                color = vr.Option1Value.Trim();
+                            if (string.IsNullOrEmpty(size)  && !string.IsNullOrEmpty((vr.Option2Value ?? "").Trim()))
+                                size  = vr.Option2Value.Trim();
+
+                            if (string.IsNullOrEmpty(color)) color = "Default";
+                            if (string.IsNullOrEmpty(size))  size  = "OS";
+
+                            // Skip duplicate variants within same product
+                            using (var chk = new SqlCommand(
+                                "SELECT COUNT(1) FROM ProductVariants WHERE ProductId=@PId AND Color=@C AND Size=@S", conn))
+                            {
+                                chk.Parameters.AddWithValue("@PId", productId);
+                                chk.Parameters.AddWithValue("@C",   color);
+                                chk.Parameters.AddWithValue("@S",   size);
+                                if (Convert.ToInt32(chk.ExecuteScalar()) > 0) continue;
+                            }
+
+                            using (var cmd = new SqlCommand(@"
+                                INSERT INTO ProductVariants
+                                    (ProductId, Color, Size, StockQuantity, SKUNumbers, IsActive)
+                                VALUES (@PId, @C, @S, @Stock, @SKU, 1)", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@PId",   productId);
+                                cmd.Parameters.AddWithValue("@C",     color);
+                                cmd.Parameters.AddWithValue("@S",     size);
+                                cmd.Parameters.AddWithValue("@Stock", vr.Stock);
+                                cmd.Parameters.AddWithValue("@SKU",   (object)(vr.SKU?.Trim()) ?? DBNull.Value);
+                                cmd.ExecuteNonQuery();
+                            }
+                            variantsInserted++;
+                        }
+                    }
+                }
+
+                var msg = string.Format(
+                    "Import complete: {0} product{1} and {2} variant{3} added.",
+                    productsInserted, productsInserted == 1 ? "" : "s",
+                    variantsInserted, variantsInserted == 1 ? "" : "s");
+                if (skipped > 0)
+                    msg += string.Format(" {0} product{1} skipped (already exist).", skipped, skipped == 1 ? "" : "s");
+
+                return Ok(msg);
+            }
+            catch (Exception ex) { return Fail("Import error: " + ex.Message); }
+        }
+
+        private static string StripSizeFromSku(string variantSku)
+        {
+            if (string.IsNullOrWhiteSpace(variantSku)) return null;
+            var s = variantSku.Trim();
+            // "Flat - 062 - Fawn - Size - 36"  → "Flat - 062 - Fawn"   (Size - num)
+            // "Pumps Jelly- 001 - BK - Size 36" → "Pumps Jelly- 001 - BK"  (Size num, no inner dash)
+            var m = System.Text.RegularExpressions.Regex.Match(s,
+                @"^(.*?)\s*-\s*Size\s*[-\s]*\d+\s*$",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (m.Success) return m.Groups[1].Value.Trim();
+            // "Heel - H2 - Maroon - 42" → "Heel - H2 - Maroon"  (bare number)
+            m = System.Text.RegularExpressions.Regex.Match(s, @"^(.*?)\s*-\s*\d+\s*$");
+            if (m.Success) return m.Groups[1].Value.Trim();
+            return s;
+        }
+
+        private static int GetOrCreateCategory(SqlConnection conn, string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) name = "General";
+            name = name.Trim();
+
+            using (var cmd = new SqlCommand(
+                "SELECT CategoryId FROM Categories WHERE CategoryName = @Name AND IsDeleted = 0", conn))
+            {
+                cmd.Parameters.AddWithValue("@Name", name);
+                var r = cmd.ExecuteScalar();
+                if (r != null && r != DBNull.Value) return Convert.ToInt32(r);
+            }
+
+            using (var cmd = new SqlCommand(@"
+                INSERT INTO Categories (CategoryName, IsActive, IsDeleted, CreatedDate)
+                OUTPUT INSERTED.CategoryId
+                VALUES (@Name, 1, 0, GETDATE())", conn))
+            {
+                cmd.Parameters.AddWithValue("@Name", name);
+                return Convert.ToInt32(cmd.ExecuteScalar());
+            }
         }
 
         // ── Shared helper ────────────────────────────────────────────────────────
