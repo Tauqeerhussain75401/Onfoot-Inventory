@@ -81,6 +81,23 @@
                 </li>
             </ul>
 
+            <!-- CRM -->
+            <div class="sidebar-section">CRM</div>
+            <ul class="sidebar-nav">
+                <li>
+                    <a href="<%: ResolveUrl("~/Customers.aspx") %>" data-page="customers">
+                        <i class="fas fa-store-alt nav-icon"></i>
+                        <span>Customers</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="<%: ResolveUrl("~/CustomerBilling.aspx") %>" data-page="customerbilling">
+                        <i class="fas fa-file-invoice-dollar nav-icon"></i>
+                        <span>Customer Billing</span>
+                    </a>
+                </li>
+            </ul>
+
             <!-- Reports -->
             <div class="sidebar-section">Reports</div>
             <ul class="sidebar-nav">
