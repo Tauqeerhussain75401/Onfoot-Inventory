@@ -130,6 +130,9 @@
     <Content Include="Products.aspx" />
     <Content Include="favicon.ico" />
     <Content Include="Global.asax" />
+    <Content Include="CustomerBilling.aspx" />
+    <Content Include="NewInvoice.aspx" />
+    <Content Include="Customers.aspx" />
     <Content Include="Sales.aspx" />
     <Content Include="Setup.aspx" />
     <Content Include="Stock.aspx" />
@@ -247,6 +250,27 @@
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="NewInvoice.aspx.cs">
+      <DependentUpon>NewInvoice.aspx</DependentUpon>
+      <SubType>ASPXCodeBehind</SubType>
+    </Compile>
+    <Compile Include="NewInvoice.aspx.designer.cs">
+      <DependentUpon>NewInvoice.aspx</DependentUpon>
+    </Compile>
+    <Compile Include="CustomerBilling.aspx.cs">
+      <DependentUpon>CustomerBilling.aspx</DependentUpon>
+      <SubType>ASPXCodeBehind</SubType>
+    </Compile>
+    <Compile Include="CustomerBilling.aspx.designer.cs">
+      <DependentUpon>CustomerBilling.aspx</DependentUpon>
+    </Compile>
+    <Compile Include="Customers.aspx.cs">
+      <DependentUpon>Customers.aspx</DependentUpon>
+      <SubType>ASPXCodeBehind</SubType>
+    </Compile>
+    <Compile Include="Customers.aspx.designer.cs">
+      <DependentUpon>Customers.aspx</DependentUpon>
+    </Compile>
     <Compile Include="Sales.aspx.cs">
       <DependentUpon>Sales.aspx</DependentUpon>
       <SubType>ASPXCodeBehind</SubType>
