@@ -275,7 +275,7 @@ namespace Onfoot_Inventory
                     conn.Open();
                     object customer = null;
                     using (var cmd = new SqlCommand(@"
-                        SELECT CustomerId, ShopName, PersonName, ContactNo1, OpeningBalance
+                        SELECT CustomerId, ShopName, PersonName, ContactNo1, OpeningBalance, CreatedDate
                         FROM   B2BCustomers WHERE CustomerId = @Id", conn))
                     {
                         cmd.Parameters.AddWithValue("@Id", customerId);
@@ -287,7 +287,8 @@ namespace Onfoot_Inventory
                                     ShopName       = r["ShopName"].ToString(),
                                     PersonName     = r["PersonName"].ToString(),
                                     ContactNo1     = r["ContactNo1"].ToString(),
-                                    OpeningBalance = Convert.ToDecimal(r["OpeningBalance"])
+                                    OpeningBalance = Convert.ToDecimal(r["OpeningBalance"]),
+                                    CreatedDate    = Convert.ToDateTime(r["CreatedDate"]).ToString("dd-MMM-yyyy")
                                 };
                         }
                     }

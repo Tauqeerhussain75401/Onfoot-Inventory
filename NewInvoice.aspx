@@ -160,6 +160,24 @@
             box-shadow: 0 -4px 16px rgba(0,0,0,.06);
         }
 
+        /* ── Collapse toggle ── */
+        .collapse-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            border-radius: 5px;
+            border: none;
+            background: rgba(99,102,241,0.15);
+            color: #4338ca;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: background .15s;
+        }
+        .collapse-toggle:hover { background: rgba(99,102,241,0.3); }
+        .collapse-toggle i { transition: transform .2s ease; font-size: 0.65rem; }
+
         /* ── Discount input ── */
         .discount-wrap { position: relative; }
         .discount-wrap .form-control { padding-right: 48px; text-align: right; }
@@ -385,6 +403,7 @@
 
     <script>
         var invoiceItems = [];  // [{variantId, size, sku, qty, salePrice}]
+        var collapseState = {}; // ghKey -> true (collapsed)
         var pkFmt = { minimumFractionDigits: 2 };
 
         /* ============================================================ INIT */
@@ -543,11 +562,17 @@
                 var safePN  = escJs(g.productName), safeC = escJs(g.color);
                 var ghKey   = encodeURIComponent(g.productName + '||' + g.color);
                 var ghStyle = 'padding:8px 10px;border-bottom:1px solid #c7d2fe;vertical-align:middle;';
+                var isCollapsed  = !!collapseState[ghKey];
+                var chevronStyle = isCollapsed ? 'transform:rotate(-90deg);' : '';
+
                 html += '<tr data-ghkey="' + ghKey + '" style="background:linear-gradient(135deg,#eff6ff,#e0e7ff);">'
 
                     // cols 1-3: product info
                     + '<td colspan="3" style="' + ghStyle + '">'
                     +   '<div class="d-flex align-items-center gap-2 flex-wrap">'
+                    +     '<button type="button" class="collapse-toggle" onclick="toggleGroup(\'' + ghKey + '\')" title="Collapse / Expand">'
+                    +       '<i class="fas fa-chevron-down" style="' + chevronStyle + '"></i>'
+                    +     '</button>'
                     +     '<span style="font-weight:700;font-size:0.88rem;color:#1e40af;">' + escHtml(g.productName) + '</span>'
                     +     '<span style="background:#bfdbfe;color:#1e40af;border-radius:20px;font-size:0.72rem;font-weight:600;padding:2px 9px;">' + escHtml(g.color) + '</span>'
                     +     '<span style="font-size:0.78rem;color:#64748b;">' + g.rows.length + ' sizes</span>'
@@ -593,7 +618,8 @@
                 g.rows.forEach(function (entry) {
                     var it = entry.it, idx = entry.idx;
                     var total = (it.qty || 0) * (it.salePrice || 0);
-                    html += '<tr data-idx="' + idx + '">';
+                    var hiddenAttr = isCollapsed ? ' style="display:none;"' : '';
+                    html += '<tr data-idx="' + idx + '" data-groupkey="' + ghKey + '"' + hiddenAttr + '>';
                     html += '<td class="text-center row-num">' + rowNum + '</td>';
                     html += '<td class="text-center"><span class="size-pill">' + escHtml(it.size) + '</span></td>';
                     html += '<td><span class="sku-code">' + escHtml(it.sku || '-') + '</span></td>';
@@ -688,6 +714,19 @@
                 return !(it.productName === productName && it.color === color);
             });
             renderGrid();
+        }
+
+        function toggleGroup(ghKey) {
+            collapseState[ghKey] = !collapseState[ghKey];
+            var $rows = $('tr[data-groupkey="' + ghKey + '"]');
+            var $icon = $('tr[data-ghkey="' + ghKey + '"] .collapse-toggle i');
+            if (collapseState[ghKey]) {
+                $rows.hide();
+                $icon.css('transform', 'rotate(-90deg)');
+            } else {
+                $rows.show();
+                $icon.css('transform', '');
+            }
         }
 
         function recalc() {

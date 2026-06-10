@@ -1,4 +1,4 @@
-<%@ Page Title="Customer Billing" Language="C#" MasterPageFile="~/Site.Master" AutoEventWireup="true" CodeBehind="CustomerBilling.aspx.cs" Inherits="Onfoot_Inventory.CustomerBilling" %>
+﻿<%@ Page Title="Customer Billing" Language="C#" MasterPageFile="~/Site.Master" AutoEventWireup="true" CodeBehind="CustomerBilling.aspx.cs" Inherits="Onfoot_Inventory.CustomerBilling" %>
 
 <asp:Content ID="HeadContent" ContentPlaceHolderID="HeadContent" runat="server">
     <link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet" />
@@ -85,6 +85,11 @@
         .ledger-table td, .ledger-table th { padding:7px 12px;font-size:0.84rem;vertical-align:middle; }
         .ledger-debit  { color:#dc2626;font-weight:600; }
         .ledger-credit { color:#16a34a;font-weight:600; }
+
+        /* View modal – group rows */
+        .view-group-row { cursor: pointer; }
+        .view-group-row:hover td { background: #dcfce7 !important; }
+        .view-chevron { transition: transform .2s ease; font-size: 0.65rem; color: #15803d; }
     </style>
 </asp:Content>
 
@@ -193,6 +198,9 @@
                 </div>
                 <div class="modal-footer border-0" style="padding:12px 24px 18px;gap:8px;">
                     <button type="button" class="btn btn-light btn-sm px-4" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm px-4" onclick="printInvoice()">
+                        <i class="fas fa-print me-1"></i> Print
+                    </button>
                     <button type="button" class="btn btn-success btn-sm px-4" id="btnViewLedger" onclick="openLedgerFromView()">
                         <i class="fas fa-book me-1"></i> View Ledger
                     </button>
@@ -262,6 +270,7 @@
         var invTable;
         var viewModalBS, ledgerModalBS, cancelModalBS;
         var viewCustomerId = 0, cancelInvoiceId = 0;
+        var viewCollapseState = {}, currentViewData = null;
         var pkFmt = { minimumFractionDigits: 2 };
 
         /* ── Init ── */
@@ -329,7 +338,7 @@
                     var disc = parseFloat(inv.Discount);
                     var discCell = disc > 0
                         ? '<span style="color:#d97706;font-weight:600;">Rs. ' + disc.toLocaleString('en-PK', pkFmt) + '</span>'
-                        : '<span class="text-muted">—</span>';
+                        : '<span class="text-muted">Rs. 0.00</span>';
                     var actions = '<div class="inv-action-wrap">'
                         + '<button class="btn-grid-view" onclick="viewInvoice(' + inv.InvoiceId + ')" title="View"><i class="fas fa-eye"></i></button>'
                         + '<button class="btn-grid-ledger" onclick="openLedger(' + inv.CustomerId + ')" title="Ledger"><i class="fas fa-book"></i></button>';
@@ -365,55 +374,114 @@
                     $('#viewBody').html('<p class="text-danger text-center py-3">Failed to load invoice.</p>');
                     return;
                 }
+                currentViewData = data;
+                viewCollapseState = {};
                 var h = data.header;
                 viewCustomerId = h.CustomerId;
                 $('#viewTitle').text(h.InvoiceNumber);
-                $('#viewSubtitle').text(h.ShopName + '  —  ' + h.InvoiceDate);
+                $('#viewSubtitle').html(escHtml(h.ShopName) + ' &nbsp;&bull;&nbsp; ' + escHtml(h.InvoiceDate));
 
-                var stBadge = h.Status === 'Active'
-                    ? '<span class="badge-active ms-2">Active</span>'
-                    : '<span class="badge-inactive ms-2">Cancelled</span>';
+                var isActive = h.Status === 'Active';
+                var stBadge  = isActive
+                    ? '<span style="display:inline-block;background:#dcfce7;color:#15803d;border-radius:20px;font-size:0.66rem;font-weight:700;padding:2px 9px;vertical-align:middle;letter-spacing:.02em;">Active</span>'
+                    : '<span style="display:inline-block;background:#fee2e2;color:#dc2626;border-radius:20px;font-size:0.66rem;font-weight:700;padding:2px 9px;vertical-align:middle;letter-spacing:.02em;">Cancelled</span>';
 
-                var html = '<div class="row g-3 mb-3">';
-                html += '<div class="col-sm-7"><div class="detail-info-box">';
-                html += '<div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Customer</div>';
-                html += '<div class="fw-bold mt-1" style="font-size:1rem;">' + escHtml(h.ShopName) + stBadge + '</div>';
-                html += '<div style="font-size:0.84rem;color:#475569;">' + escHtml(h.PersonName) + ' &bull; ' + escHtml(h.ContactNo1) + '</div>';
-                if (h.City) html += '<div style="font-size:0.82rem;color:#94a3b8;"><i class="fas fa-map-marker-alt me-1"></i>' + escHtml(h.City) + '</div>';
-                html += '</div></div>';
+                // ── Bill To (left) | Invoice ref (right) ──────────────────────────
+                var html = '<div class="d-flex justify-content-between align-items-start mb-4 pb-3" style="border-bottom:2px solid #eef2f7;">';
+                html += '<div>';
+                html += '<div style="font-size:0.58rem;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;font-weight:700;margin-bottom:7px;">Bill To</div>';
+                html += '<div style="font-size:1.05rem;font-weight:800;color:#0f172a;line-height:1.3;">' + escHtml(h.ShopName) + '&nbsp;' + stBadge + '</div>';
+                html += '<div style="font-size:0.84rem;color:#475569;margin-top:6px;">' + escHtml(h.PersonName) + '</div>';
+                html += '<div style="font-size:0.81rem;color:#64748b;margin-top:3px;"><i class="fas fa-phone fa-xs me-1" style="opacity:.5;"></i>' + escHtml(h.ContactNo1) + '</div>';
+                if (h.City) html += '<div style="font-size:0.79rem;color:#94a3b8;margin-top:3px;"><i class="fas fa-map-marker-alt fa-xs me-1"></i>' + escHtml(h.City) + '</div>';
+                html += '</div>';
+                html += '<div style="text-align:right;">';
+                html += '<div style="font-size:0.58rem;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;font-weight:700;margin-bottom:7px;">Invoice</div>';
+                html += '<div style="font-size:1.1rem;font-weight:800;color:#1e40af;letter-spacing:-.01em;">' + escHtml(h.InvoiceNumber) + '</div>';
+                html += '<div style="font-size:0.81rem;color:#64748b;margin-top:6px;"><i class="fas fa-calendar-alt fa-xs me-1" style="opacity:.5;"></i>' + escHtml(h.InvoiceDate) + '</div>';
+                html += '</div>';
+                html += '</div>';
 
-                html += '<div class="col-sm-5"><div class="detail-sum-box">';
-                html += '<div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700;">Summary</div>';
-                html += '<div class="d-flex justify-content-between mt-2 mb-1"><span class="text-muted small">Total Qty</span><strong>' + h.TotalQty + '</strong></div>';
-                html += '<div class="d-flex justify-content-between mb-1"><span class="text-muted small">Total Amount</span><span>Rs. ' + parseFloat(h.TotalAmount).toLocaleString('en-PK', pkFmt) + '</span></div>';
-                if (h.Discount > 0) html += '<div class="d-flex justify-content-between mb-1"><span class="text-muted small">Discount</span><span style="color:#d97706;">- Rs. ' + parseFloat(h.Discount).toLocaleString('en-PK', pkFmt) + '</span></div>';
-                html += '<hr class="my-1"/><div class="d-flex justify-content-between"><span class="fw-bold">Grand Total</span>';
-                html += '<strong style="font-size:1.05rem;color:#15803d;">Rs. ' + parseFloat(h.GrandTotal).toLocaleString('en-PK', pkFmt) + '</strong></div>';
-                html += '</div></div></div>';
+                // ── Notes ─────────────────────────────────────────────────────────
+                if (h.Notes) {
+                    html += '<div class="mb-3 px-3 py-2 rounded" style="background:#fffbeb;border-left:3px solid #fcd34d;font-size:0.82rem;color:#92400e;">';
+                    html += '<i class="fas fa-sticky-note me-1"></i>' + escHtml(h.Notes) + '</div>';
+                }
 
-                if (h.Notes) html += '<div class="mb-3 p-2 rounded" style="background:#fffbeb;border:1px solid #fde68a;font-size:0.84rem;"><i class="fas fa-sticky-note me-1 text-warning"></i>' + escHtml(h.Notes) + '</div>';
-
-                html += '<div class="table-responsive" style="border-radius:8px;border:1px solid #e2e8f0;">';
+                // ── Items table ────────────────────────────────────────────────────
+                html += '<div class="table-responsive mb-0" style="border-radius:8px;border:1px solid #e2e8f0;">';
                 html += '<table class="view-items-table"><thead><tr>'
-                    + '<th style="width:70px" class="text-center">Size</th>'
+                    + '<th style="width:60px" class="text-center">Size</th>'
                     + '<th>SKU</th>'
-                    + '<th style="width:70px" class="text-center">Qty</th>'
-                    + '<th style="width:130px" class="text-end">Sale Price</th>'
-                    + '<th style="width:130px" class="text-end">Total</th>'
+                    + '<th style="width:60px" class="text-center">Qty</th>'
+                    + '<th style="width:120px" class="text-end">Sale Price</th>'
+                    + '<th style="width:120px" class="text-end">Total</th>'
                     + '</tr></thead><tbody>';
 
                 if (data.items && data.items.length) {
+                    var vGroups = {}, vGroupKeys = [];
                     $.each(data.items, function (i, it) {
-                        html += '<tr><td class="text-center"><span class="size-pill">' + escHtml(it.Size) + '</span></td>';
-                        html += '<td><code style="font-size:0.76rem;">' + escHtml(it.SKUNumber || '—') + '</code></td>';
-                        html += '<td class="text-center fw-semibold">' + it.Qty + '</td>';
-                        html += '<td class="text-end">Rs. ' + parseFloat(it.SalePrice).toLocaleString('en-PK', pkFmt) + '</td>';
-                        html += '<td class="text-end fw-semibold" style="color:#15803d;">Rs. ' + parseFloat(it.Total).toLocaleString('en-PK', pkFmt) + '</td></tr>';
+                        var sku  = it.SKUNumber || '';
+                        var gKey = sku.replace(/\s*-\s*[Ss]ize.*$/i, '').trim() || sku || 'Other';
+                        gKey = gKey.replace(/\s*-\s*/g, ' - ').replace(/\s+/g, ' ').trim();
+                        if (!vGroups[gKey]) { vGroups[gKey] = { label: gKey, items: [] }; vGroupKeys.push(gKey); }
+                        vGroups[gKey].items.push(it);
+                    });
+                    var multiGrp = vGroupKeys.length > 1;
+                    $.each(vGroupKeys, function (gi, gKey) {
+                        var grp     = vGroups[gKey];
+                        var safeKey = encodeURIComponent(gKey);
+                        if (multiGrp) {
+                            var gTotal = 0, gQty = 0;
+                            $.each(grp.items, function (i, it) { gTotal += parseFloat(it.Total)||0; gQty += parseInt(it.Qty)||0; });
+                            var ghS = 'padding:9px 14px;background:linear-gradient(135deg,#f0fdf4,#e8fdf2);border-bottom:1px solid #c6f6d5;vertical-align:middle;';
+                            html += '<tr class="view-group-row" data-vghkey="' + safeKey + '" onclick="toggleViewGroup(\'' + safeKey + '\')">'
+                                + '<td colspan="3" style="' + ghS + '">'
+                                +   '<div class="d-flex align-items-center gap-2">'
+                                +     '<i class="fas fa-chevron-down view-chevron"></i>'
+                                +     '<span style="font-weight:700;font-size:0.83rem;color:#065f46;">' + escHtml(grp.label) + '</span>'
+                                +     '<span style="font-size:0.73rem;color:#64748b;margin-left:2px;">' + grp.items.length + ' size(s) &bull; Qty: ' + gQty + '</span>'
+                                +   '</div>'
+                                + '</td>'
+                                + '<td style="' + ghS + '"></td>'
+                                + '<td class="text-end" style="' + ghS + 'font-weight:700;color:#15803d;font-size:0.88rem;">Rs. ' + gTotal.toLocaleString('en-PK', pkFmt) + '</td>'
+                                + '</tr>';
+                        }
+                        $.each(grp.items, function (i, it) {
+                            var rowAttr = multiGrp ? ' data-vgroupkey="' + safeKey + '"' : '';
+                            html += '<tr' + rowAttr + '>'
+                                + '<td class="text-center"><span class="size-pill">' + escHtml(it.Size) + '</span></td>'
+                                + '<td style="font-size:0.82rem;color:#475569;">' + escHtml(it.SKUNumber || '—') + '</td>'
+                                + '<td class="text-center fw-semibold">' + it.Qty + '</td>'
+                                + '<td class="text-end" style="color:#475569;">Rs. ' + parseFloat(it.SalePrice).toLocaleString('en-PK', pkFmt) + '</td>'
+                                + '<td class="text-end fw-bold" style="color:#15803d;">Rs. ' + parseFloat(it.Total).toLocaleString('en-PK', pkFmt) + '</td>'
+                                + '</tr>';
+                        });
                     });
                 } else {
-                    html += '<tr><td colspan="5" class="text-center text-muted py-3">No items.</td></tr>';
+                    html += '<tr><td colspan="5" class="text-center text-muted py-4">No items.</td></tr>';
                 }
                 html += '</tbody></table></div>';
+
+                // ── Totals (right-aligned) ─────────────────────────────────────────
+                html += '<div class="d-flex justify-content-end mt-3">';
+                html += '<div style="min-width:285px;">';
+                html += '<div class="d-flex justify-content-between py-2" style="font-size:0.85rem;color:#475569;border-bottom:1px solid #f1f5f9;">';
+                html += '<span>Subtotal <span style="font-size:0.75rem;color:#94a3b8;">(' + h.TotalQty + ' items)</span></span>';
+                html += '<span class="fw-semibold">Rs. ' + parseFloat(h.TotalAmount).toLocaleString('en-PK', pkFmt) + '</span>';
+                html += '</div>';
+                if (parseFloat(h.Discount) > 0) {
+                    html += '<div class="d-flex justify-content-between py-2" style="font-size:0.85rem;color:#475569;border-bottom:1px solid #f1f5f9;">';
+                    html += '<span>Discount</span>';
+                    html += '<span style="color:#d97706;font-weight:600;">&#8722;&nbsp;Rs. ' + parseFloat(h.Discount).toLocaleString('en-PK', pkFmt) + '</span>';
+                    html += '</div>';
+                }
+                html += '<div class="d-flex justify-content-between align-items-center px-4 py-3 mt-2" style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #bbf7d0;border-radius:10px;">';
+                html += '<span style="font-weight:700;font-size:0.9rem;color:#15803d;"><i class="fas fa-check-circle me-1" style="opacity:.75;"></i>Grand Total</span>';
+                html += '<strong style="font-size:1.22rem;color:#15803d;letter-spacing:-.02em;">Rs. ' + parseFloat(h.GrandTotal).toLocaleString('en-PK', pkFmt) + '</strong>';
+                html += '</div>';
+                html += '</div></div>';
+
                 $('#viewBody').html(html);
             });
         }
@@ -421,6 +489,153 @@
         function openLedgerFromView() {
             viewModalBS.hide();
             setTimeout(function () { openLedger(viewCustomerId); }, 300);
+        }
+
+        function toggleViewGroup(safeKey) {
+            viewCollapseState[safeKey] = !viewCollapseState[safeKey];
+            var $rows = $('tr[data-vgroupkey="' + safeKey + '"]');
+            var $icon = $('tr[data-vghkey="' + safeKey + '"] .view-chevron');
+            if (viewCollapseState[safeKey]) {
+                $rows.hide();
+                $icon.css('transform', 'rotate(-90deg)');
+            } else {
+                $rows.show();
+                $icon.css('transform', '');
+            }
+        }
+
+        function printInvoice() {
+            if (!currentViewData || !currentViewData.header) return;
+            var h     = currentViewData.header;
+            var items = currentViewData.items || [];
+            // Build product groups (collapsed view — one row per product)
+            var vGrps = {}, vGrpKeys = [];
+            $.each(items, function (i, it) {
+                var sku  = it.SKUNumber || '';
+                var gKey = sku.replace(/\s*-\s*[Ss]ize.*$/i, '').trim() || sku || 'Other';
+                gKey = gKey.replace(/\s*-\s*/g, ' - ').replace(/\s+/g, ' ').trim();
+                if (!vGrps[gKey]) { vGrps[gKey] = { label: gKey, items: [] }; vGrpKeys.push(gKey); }
+                vGrps[gKey].items.push(it);
+            });
+
+            function buildGroupRows() {
+                var r = '', n = 1;
+                $.each(vGrpKeys, function (i, gKey) {
+                    var grp = vGrps[gKey], gT = 0, gQ = 0;
+                    $.each(grp.items, function (j, it) { gT += parseFloat(it.Total)||0; gQ += parseInt(it.Qty)||0; });
+                    var firstRate = parseFloat(grp.items[0].SalePrice) || 0;
+                    var allSame   = grp.items.every(function (it) { return parseFloat(it.SalePrice) === firstRate; });
+                    var minRate   = Math.min.apply(null, grp.items.map(function (it) { return parseFloat(it.SalePrice)||0; }));
+                    var maxRate   = Math.max.apply(null, grp.items.map(function (it) { return parseFloat(it.SalePrice)||0; }));
+                    var rateStr   = allSame
+                        ? 'Rs. ' + firstRate.toLocaleString('en-PK', pkFmt)
+                        : 'Rs. ' + minRate.toLocaleString('en-PK', pkFmt) + ' - ' + maxRate.toLocaleString('en-PK', pkFmt);
+                    var bg = n % 2 === 0 ? 'background:#f9fafb;' : '';
+                    r += '<tr style="' + bg + '">'
+                        + '<td style="padding:7px 10px;border-bottom:1px solid #eee;color:#9ca3af;font-size:10px;">' + n + '</td>'
+                        + '<td style="padding:7px 10px;border-bottom:1px solid #eee;font-weight:600;font-size:12px;">' + escHtml(grp.label) + '</td>'
+                        + '<td style="padding:7px 10px;border-bottom:1px solid #eee;text-align:center;font-size:11px;color:#6b7280;">' + grp.items.length + ' size(s)</td>'
+                        + '<td style="padding:7px 10px;border-bottom:1px solid #eee;text-align:right;font-size:11px;color:#1e40af;font-weight:600;">' + rateStr + '</td>'
+                        + '<td style="padding:7px 10px;border-bottom:1px solid #eee;text-align:center;font-weight:700;font-size:12px;">' + gQ + '</td>'
+                        + '<td style="padding:7px 10px;border-bottom:1px solid #eee;text-align:right;font-weight:700;font-size:12px;color:#15803d;">Rs. ' + gT.toLocaleString('en-PK', pkFmt) + '</td>'
+                        + '</tr>';
+                    n++;
+                });
+                return r;
+            }
+
+            var stClr = h.Status === 'Active' ? 'background:#dcfce7;color:#15803d;' : 'background:#fee2e2;color:#dc2626;';
+
+            function buildCopy(copyLabel) {
+                var isC    = copyLabel === 'Customer Copy';
+                var badgeBg = isC ? 'background:#eff6ff;color:#1d4ed8;' : 'background:#f0fdf4;color:#15803d;';
+                return ''
+                    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">'
+                    +   '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;padding:3px 10px;border-radius:20px;' + badgeBg + '">' + copyLabel + '</span>'
+                    +   '<span style="font-size:10px;color:#9ca3af;font-weight:600;letter-spacing:.04em;">Onfoot Inventory</span>'
+                    + '</div>'
+                    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;padding-bottom:12px;border-bottom:2px solid #e5e7eb;">'
+                    +   '<div>'
+                    +     '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#9ca3af;font-weight:700;margin-bottom:5px;">Bill To</div>'
+                    +     '<div style="font-size:14px;font-weight:800;color:#0f172a;">' + escHtml(h.ShopName) + '</div>'
+                    +     '<div style="font-size:11px;color:#475569;margin-top:3px;">' + escHtml(h.PersonName) + '</div>'
+                    +     '<div style="font-size:11px;color:#6b7280;margin-top:2px;">' + escHtml(h.ContactNo1) + (h.City ? ' &bull; ' + escHtml(h.City) : '') + '</div>'
+                    +     (h.Notes ? '<div style="font-size:10px;color:#92400e;margin-top:4px;padding:3px 7px;background:#fffbeb;border-left:2px solid #fcd34d;">Note: ' + escHtml(h.Notes) + '</div>' : '')
+                    +   '</div>'
+                    +   '<div style="text-align:right;">'
+                    +     '<div style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#9ca3af;font-weight:700;margin-bottom:5px;">Invoice</div>'
+                    +     '<div style="font-size:15px;font-weight:800;color:#1e40af;">' + escHtml(h.InvoiceNumber) + '</div>'
+                    +     '<div style="font-size:11px;color:#6b7280;margin-top:3px;">' + escHtml(h.InvoiceDate) + '</div>'
+                    +     '<div style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:700;' + stClr + '">' + escHtml(h.Status) + '</div>'
+                    +   '</div>'
+                    + '</div>'
+                    + '<table style="width:100%;border-collapse:collapse;margin-bottom:10px;">'
+                    +   '<thead><tr style="background:#f8fafc;">'
+                    +     '<th style="padding:6px 10px;border-bottom:2px solid #e5e7eb;font-size:9px;text-transform:uppercase;color:#6b7280;width:22px;">#</th>'
+                    +     '<th style="padding:6px 10px;border-bottom:2px solid #e5e7eb;font-size:9px;text-transform:uppercase;color:#6b7280;">Product</th>'
+                    +     '<th style="padding:6px 10px;border-bottom:2px solid #e5e7eb;font-size:9px;text-transform:uppercase;color:#6b7280;text-align:center;width:54px;">Sizes</th>'
+                    +     '<th style="padding:6px 10px;border-bottom:2px solid #e5e7eb;font-size:9px;text-transform:uppercase;color:#6b7280;text-align:right;width:100px;">Rate</th>'
+                    +     '<th style="padding:6px 10px;border-bottom:2px solid #e5e7eb;font-size:9px;text-transform:uppercase;color:#6b7280;text-align:center;width:40px;">Qty</th>'
+                    +     '<th style="padding:6px 10px;border-bottom:2px solid #e5e7eb;font-size:9px;text-transform:uppercase;color:#6b7280;text-align:right;width:90px;">Amount</th>'
+                    +   '</tr></thead>'
+                    +   '<tbody>' + buildGroupRows() + '</tbody>'
+                    + '</table>'
+                    + '<div style="display:flex;justify-content:flex-end;">'
+                    +   '<div style="min-width:210px;">'
+                    +     '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6;">'
+                    +       '<span>Subtotal (' + h.TotalQty + ' items)</span><span style="font-weight:600;color:#374151;">Rs. ' + parseFloat(h.TotalAmount).toLocaleString('en-PK', pkFmt) + '</span>'
+                    +     '</div>'
+                    +     (parseFloat(h.Discount) > 0
+                            ? '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6;">'
+                              + '<span>Discount</span><span style="font-weight:600;color:#d97706;">- Rs. ' + parseFloat(h.Discount).toLocaleString('en-PK', pkFmt) + '</span>'
+                              + '</div>'
+                            : '')
+                    +     '<div style="display:flex;justify-content:space-between;padding:8px 12px;margin-top:6px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;">'
+                    +       '<span style="font-weight:700;font-size:12px;color:#15803d;">Grand Total</span>'
+                    +       '<strong style="font-size:15px;color:#15803d;">Rs. ' + parseFloat(h.GrandTotal).toLocaleString('en-PK', pkFmt) + '</strong>'
+                    +     '</div>'
+                    +   '</div>'
+                    + '</div>';
+            }
+
+            var win = window.open('', '_blank', 'width=700,height=940');
+            win.document.write(
+                '<!DOCTYPE html><html><head>'
+                + '<title>Invoice ' + escHtml(h.InvoiceNumber) + '</title>'
+                + '<style>'
+                + '*{box-sizing:border-box;margin:0;padding:0;}'
+                + 'body{font-family:Arial,sans-serif;background:#f3f4f6;}'
+                + '.page{max-width:640px;margin:0 auto;padding:16px;}'
+                + '.action-bar{display:flex;gap:8px;margin-bottom:14px;}'
+                + '.btn-p{flex:1;padding:10px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;}'
+                + '.btn-print{background:#1e40af;color:#fff;}'
+                + '.btn-pdf{background:#15803d;color:#fff;}'
+                + '.copy-card{background:#fff;border-radius:10px;padding:18px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);}'
+                + '.cut-wrap{display:flex;align-items:center;gap:8px;margin:12px 0;}'
+                + '.cut-line{flex:1;border-top:2px dashed #cbd5e1;}'
+                + '.cut-text{font-size:10px;color:#94a3b8;font-weight:700;letter-spacing:.06em;white-space:nowrap;}'
+                + '@media print{'
+                +   '.action-bar{display:none!important;}'
+                +   'body{background:#fff;}'
+                +   '.page{padding:0;max-width:100%;}'
+                +   '.copy-card{box-shadow:none;border-radius:0;padding:12px 14px;}'
+                +   '.cut-wrap{margin:4px 0;}'
+                +   '@page{margin:8mm;size:A4;}'
+                + '}'
+                + '</style></head><body>'
+                + '<div class="page">'
+                +   '<div class="action-bar">'
+                +     '<button class="btn-p btn-print" onclick="window.print()">&#128438; &nbsp;Print</button>'
+                +     '<button class="btn-p btn-pdf" onclick="window.print()">&#8595; &nbsp;Download PDF &nbsp;<small style="opacity:.8;">(Save as PDF)</small></button>'
+                +   '</div>'
+                +   '<div class="copy-card">' + buildCopy('Customer Copy') + '</div>'
+                +   '<div class="cut-wrap"><div class="cut-line"></div><span class="cut-text">&#9988; &nbsp;CUT HERE&nbsp; &#9988;</span><div class="cut-line"></div></div>'
+                +   '<div class="copy-card">' + buildCopy('Company Copy') + '</div>'
+                + '</div>'
+                + '<script>window.onload=function(){window.print();}<\/script>'
+                + '</body></html>'
+            );
+            win.document.close();
         }
 
         /* ── Ledger ── */
@@ -436,7 +651,7 @@
                     return;
                 }
                 var c = data.customer;
-                $('#ledgerTitle').text(escHtml(c.ShopName) + ' — Ledger');
+                $('#ledgerTitle').text(c.ShopName + ' Ledger');
                 $('#ledgerSubtitle').text(c.PersonName + ' | ' + c.ContactNo1);
 
                 var bal = parseFloat(c.OpeningBalance) || 0;
@@ -453,7 +668,7 @@
                     + '<th style="width:140px" class="text-end">Balance</th></tr></thead><tbody>';
 
                 if (bal > 0) {
-                    html += '<tr style="background:#fefce8;"><td class="text-muted" style="font-size:0.78rem;">—</td>';
+                    html += '<tr style="background:#fefce8;"><td class="text-muted" style="font-size:0.78rem;">' + escHtml(c.CreatedDate) + '</td>';
                     html += '<td><span class="badge rounded-pill" style="background:#fef3c7;color:#92400e;font-size:0.7rem;">Opening</span></td>';
                     html += '<td class="text-muted" style="font-size:0.82rem;">Opening Balance</td>';
                     html += '<td class="text-end ledger-debit">Rs. ' + bal.toLocaleString('en-PK', pkFmt) + '</td>';
